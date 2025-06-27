@@ -5,98 +5,27 @@ library(reticulate)
 xdna_dir <- "P:/SEQ/Atest_cae"
 seq_dir <- "P:/SEQ/Atest_cae"
 
-# Nettoyage séquence
-clean_seq <- function(x) {
-  x <- gsub("[\r\n ]", "", x)
-  toupper(x)
-}
-
-# Annotation mutations (barre verticale)
-annotate_mutations <- function(pattern_seq, subject_seq) {
-  pattern_seq <- toupper(pattern_seq)
-  subject_seq <- toupper(subject_seq)
-  if (nchar(pattern_seq) != nchar(subject_seq)) {
-    return(paste(rep(" ", nchar(pattern_seq)), collapse = ""))
-  }
-  pattern_chars <- strsplit(pattern_seq, "")[[1]]
-  subject_chars <- strsplit(subject_seq, "")[[1]]
-  annotation <- character(length(pattern_chars))
-  for (i in seq_along(pattern_chars)) {
-    annotation[i] <- ifelse(pattern_chars[i] != subject_chars[i], "|", " ")
-  }
-  paste(annotation, collapse = "")
-}
-
-# Parser features GenBank basique, extrait positions et couleur (exemple fixe)
-parse_features <- function(features_lines) {
-  feats <- list()
-  for (line in features_lines) {
-    pos_match <- regmatches(line, regexpr("\\d+\\.\\.\\d+", line))
-    if (length(pos_match) > 0) {
-      feats[[length(feats) + 1]] <- list(pos_raw = pos_match, color = sample(c("red","blue","green","orange","purple"), 1))
-    }
-  }
-  feats
-}
-
-# Construire vecteur couleurs pour la séquence
-get_color_map <- function(features_lines, aln_start, seq_length) {
-  feats <- parse_features(features_lines)
-  color_map <- rep(NA, seq_length)
-  for (feat in feats) {
-    pos_str <- feat$pos_raw
-    if (is.null(pos_str)) next
-    bounds <- as.numeric(unlist(strsplit(pos_str, "\\.\\.")))
-    if (length(bounds) != 2) next
-    start <- bounds[1]
-    end <- bounds[2]
-    for (i in seq_len(seq_length)) {
-      ref_pos <- aln_start + i - 1
-      if (ref_pos >= start && ref_pos <= end) {
-        color_map[i] <- feat$color
-      }
-    }
-  }
-  color_map
-}
-
-# Créer ligne HTML caractère par caractère monospace, couleur + tooltip
-htmlify_line <- function(line, colors = NULL, start_pos = NULL) {
-  chars <- strsplit(line, "")[[1]]
-  spans <- character(length(chars))
-  for (i in seq_along(chars)) {
-    style <- "font-family: Courier New, monospace;"
-    if (!is.null(colors) && !is.na(colors[i])) {
-      style <- paste0(style, "color:", colors[i], ";")
-    }
-    tooltip <- if (!is.null(start_pos)) {
-      paste0("Pos ", start_pos + i - 1)
-    } else {
-      ""
-    }
-    spans[i] <- paste0("<span title='", tooltip, "' style='", style, "'>", chars[i], "</span>")
-  }
-  paste0(spans, collapse = "")
-}
-
 server_clonage <- function(input, output, session) {
   data_xdna <- reactiveValues(seq = NULL, features = NULL)
+  alignment_data <- reactiveValues(results = NULL, text_version = NULL)
 
   observeEvent(input$align_btn, {
     req(input$carte_xdna)
     fichier <- file.path(xdna_dir, input$carte_xdna)
     gb_lines <- readLines(fichier, warn = FALSE)
+
     origin_line <- grep("^ORIGIN", gb_lines, ignore.case = TRUE)
-    if (length(origin_line) == 0) {
-      showNotification("Mot-clé 'ORIGIN' non trouvé dans le fichier .gb", type = "error")
-      return(NULL)
-    }
-    sequence_lines <- gb_lines[(origin_line + 1):length(gb_lines)]
-    raw_seq <- paste(sequence_lines, collapse = "")
-    sequence_text <- gsub("[^ACGTNacgtn]", "", raw_seq)
-    sequence_text <- clean_seq(sequence_text)
-    data_xdna$seq <- Biostrings::DNAString(sequence_text)
-    data_xdna$features <- grep("^     ", gb_lines, value = TRUE)
+
+    # --- Features
+    features_block <- gb_lines[1:(origin_line - 1)]
+    features_lines <- features_block[grep("^\\s{5}|^\\s{21}", features_block)]
+    data_xdna$features <- features_lines
+
+    # --- Séquence propre
+    seq_lines <- gb_lines[(origin_line + 1):length(gb_lines)]
+    seq_raw <- paste(seq_lines, collapse = "")
+    seq_clean <- gsub("[^acgtACGTnN]", "", seq_raw)
+    data_xdna$seq <- Biostrings::DNAString(toupper(seq_clean))
   })
 
   seqs <- eventReactive(input$align_btn, {
@@ -128,7 +57,12 @@ server_clonage <- function(input, output, session) {
 
   output$align_results <- renderUI({
     req(data_xdna$seq, seqs())
+
+    # Générer la légende des couleurs
+    legend_html <- generate_legend(data_xdna$features)
+
     align_output <- character()
+    text_output <- character()
 
     for (i in seq_along(seqs())) {
       aln <- Biostrings::pairwiseAlignment(pattern = seqs()[[i]], subject = data_xdna$seq)
@@ -141,26 +75,148 @@ server_clonage <- function(input, output, session) {
 
       colors <- get_color_map(data_xdna$features, aln_start, nchar(sub))
 
+      # Générer la règle de numérotation
+      ruler <- generate_ruler(aln_start, nchar(sub))
+
       pattern_html <- htmlify_line(pat)
       annot_html <- htmlify_line(annot)
       subject_colored <- htmlify_line(sub, colors, aln_start)
+      ruler_html <- paste0("<span class='ruler-line'>", htmlify_line(ruler), "</span>")
 
       align_block <- paste0(
-        "<b>Alignement avec ", input$seq_files[i], " :</b>\n",
+        "<div class='alignment-block'>",
+        "<div class='alignment-title'>Alignement avec ", input$seq_files[i], "</div>",
+        ruler_html, "\n",
         pattern_html, "\n",
         annot_html, "\n",
         subject_colored, "\n",
-        "<i>Score : ", score(aln), "</i>"
+        "<div class='alignment-score'>Score : ", score(aln), "</div>",
+        "</div>"
+      )
+
+      # Version texte pour export
+      text_block <- paste0(
+        "=== Alignement avec ", input$seq_files[i], " ===\n",
+        "Score: ", score(aln), "\n",
+        "Position: ", aln_start, "-", aln_start + nchar(sub) - 1, "\n\n",
+        "Ruler:   ", ruler, "\n",
+        "Pattern: ", pat, "\n",
+        "Match:   ", annot, "\n",
+        "Subject: ", sub, "\n\n"
       )
 
       align_output <- c(align_output, align_block)
+      text_output <- c(text_output, text_block)
     }
+
+    # Stocker les résultats pour les exports
+    alignment_data$results <- align_output
+    alignment_data$text_version <- paste(text_output, collapse = "")
 
     tags$div(
       id = "align_results",
-      style = "font-family: 'Courier New', monospace; background: #f8f8f8; border: 1px solid #ddd; padding: 10px; white-space: pre; overflow-x: auto; max-width: 100%; max-height: 400px;",
-      HTML(paste(align_output, collapse = "\n\n"))
+      HTML(paste0(legend_html, paste(align_output, collapse = "")))
     )
   })
 
+  # Download handlers
+  output$download_txt <- downloadHandler(
+    filename = function() {
+      paste0("alignement_", Sys.Date(), ".txt")
+    },
+    content = function(file) {
+      req(alignment_data$text_version)
+
+      # En-tête
+      header <- paste0(
+        "=== RESULTATS D'ALIGNEMENT - HGX ===\n",
+        "Date: ", Sys.time(), "\n",
+        "Carte GenBank: ", input$carte_xdna, "\n",
+        "Fichiers séquences: ", paste(input$seq_files, collapse = ", "), "\n",
+        "Longueur séquence référence: ", length(data_xdna$seq), " nt\n\n",
+        "LEGENDE DES COULEURS:\n"
+      )
+
+      # Légende en format texte
+      feats <- parse_features(data_xdna$features)
+      legend_text <- ""
+      for (feat in feats) {
+        if (!is.na(feat$pos_raw)) {
+          bounds <- as.numeric(unlist(strsplit(feat$pos_raw, "\\.\\.")))
+          if (length(bounds) == 2) {
+            name_display <- if (feat$name != "") feat$name else "Feature sans nom"
+            legend_text <- paste0(legend_text, "- ", name_display, " (", bounds[1], "-", bounds[2], ") - Couleur: ", feat$color, "\n")
+          }
+        }
+      }
+
+      content <- paste0(header, legend_text, "\n", alignment_data$text_version)
+      writeLines(content, file, useBytes = TRUE)
+    }
+  )
+
+  output$download_html <- downloadHandler(
+    filename = function() {
+      paste0("alignement_", Sys.Date(), ".html")
+    },
+    content = function(file) {
+      req(alignment_data$results)
+
+      legend_html <- generate_legend(data_xdna$features)
+
+      html_content <- paste0(
+        "<!DOCTYPE html>\n<html>\n<head>\n",
+        "<title>Résultats d'alignement - HGX</title>\n",
+        "<meta charset='UTF-8'>\n",
+        "<style>\n",
+        "body { font-family: Arial, sans-serif; margin: 20px; }\n",
+        "h1 { color: #b22222; }\n",
+        ".info { background: #f0f0f0; padding: 10px; margin-bottom: 15px; border-radius: 5px; }\n",
+        ".alignment-results { font-family: 'Courier New', monospace; background: #f8f8f8; padding: 15px; border-radius: 5px; }\n",
+        ".alignment-block { margin-bottom: 25px; padding: 15px; background: white; border: 1px solid #ddd; border-radius: 5px; }\n",
+        ".alignment-title { color: #2c3e50; font-weight: bold; margin-bottom: 10px; border-bottom: 2px solid #3498db; padding-bottom: 5px; }\n",
+        ".ruler-line { color: #666; background: #f9f9f9; }\n",
+        "</style>\n</head>\n<body>\n",
+        "<h1>Résultats d'alignement - HGX</h1>\n",
+        "<div class='info'>\n",
+        "<strong>Date:</strong> ", Sys.time(), "<br>\n",
+        "<strong>Carte GenBank:</strong> ", input$carte_xdna, "<br>\n",
+        "<strong>Fichiers séquences:</strong> ", paste(input$seq_files, collapse = ", "), "<br>\n",
+        "<strong>Longueur séquence référence:</strong> ", length(data_xdna$seq), " nt\n",
+        "</div>\n",
+        "<div class='alignment-results'>\n",
+        legend_html,
+        paste(alignment_data$results, collapse = ""),
+        "</div>\n</body>\n</html>"
+      )
+
+      writeLines(html_content, file, useBytes = TRUE)
+    }
+  )
+
+  output$download_fasta <- downloadHandler(
+    filename = function() {
+      paste0("alignement_", Sys.Date(), ".fasta")
+    },
+    content = function(file) {
+      req(data_xdna$seq, seqs())
+
+      fasta_content <- character()
+
+      # Séquence référence
+      fasta_content <- c(fasta_content,
+                         paste0(">Sequence_Reference_", gsub("\\.gb$", "", input$carte_xdna)),
+                         as.character(data_xdna$seq))
+
+      # Séquences alignées
+      for (i in seq_along(seqs())) {
+        seq_name <- gsub("\\.seq$", "", input$seq_files[i])
+        fasta_content <- c(fasta_content,
+                           paste0(">Sequence_", seq_name),
+                           as.character(seqs()[[i]]))
+      }
+
+      writeLines(fasta_content, file)
+    }
+  )
 }
