@@ -82,20 +82,15 @@ ui_clonage <- shinyUI(navbarPage(
         box-sizing: border-box;
       }
 
-      /* Style bloc alignement avec scroll horizontal */
+      /* Conteneur principal pour la légende + alignements */
       #align_results {
-        font-family: 'Courier New', monospace !important;
-        background: #f8f8f8;
-        border: 1px solid #ddd;
-        padding: 15px;
-        white-space: pre;
-        overflow-x: auto;
-        overflow-y: auto;
-        max-width: 100%;
-        max-height: 600px;
-        line-height: 1.4 !important;
-        border-radius: 5px;
-        position: relative;
+        width: 100% !important;
+        max-width: 100% !important;
+        border: 1px solid #ddd !important;
+        border-radius: 5px !important;
+        background: #f8f8f8 !important;
+        position: relative !important;
+        overflow: hidden !important;
       }
 
       /* Style pour la légende des couleurs - FIXE en haut */
@@ -103,68 +98,96 @@ ui_clonage <- shinyUI(navbarPage(
         position: sticky !important;
         top: 0 !important;
         z-index: 1000 !important;
-        margin-bottom: 15px !important;
-        padding: 10px !important;
-        background: #f0f0f0 !important;
-        border: 1px solid #ddd !important;
-        border-radius: 5px !important;
+        margin: 0 !important;
+        padding: 15px !important;
+        background: #f8f9fa !important;
+        border-bottom: 2px solid #dee2e6 !important;
+        border-radius: 5px 5px 0 0 !important;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+        font-family: Arial, sans-serif !important;
       }
 
-      .color-legend {
-        margin-bottom: 20px;
-        padding: 15px;
-        background: #e8f4fd;
-        border: 1px solid #bee5eb;
-        border-radius: 8px;
-        font-family: Arial, sans-serif;
+      #legend-fixed b {
+        color: #495057 !important;
+        font-size: 14px !important;
       }
 
-      .color-legend b {
-        color: #0c5460;
-        font-size: 14px;
+      /* Conteneur des alignements avec scroll horizontal */
+      .alignments-container {
+        padding: 15px !important;
+        overflow-x: auto !important;
+        overflow-y: auto !important;
+        max-height: 600px !important;
+        font-family: 'Courier New', monospace !important;
+        line-height: 1.4 !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
       }
 
       /* Style pour les alignements individuels */
       .alignment-block {
-        margin-bottom: 25px;
-        padding: 15px;
-        background: #ffffff;
-        border: 1px solid #e0e0e0;
-        border-radius: 5px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        margin-bottom: 25px !important;
+        padding: 15px !important;
+        background: #ffffff !important;
+        border: 1px solid #e0e0e0 !important;
+        border-radius: 5px !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+        white-space: pre !important;
+        overflow-x: auto !important;
+        min-width: fit-content !important;
+      }
+
+      /* Assurer que chaque ligne d'alignement ne wrap pas */
+      .alignment-block > div {
+        white-space: nowrap !important;
+        overflow-x: visible !important;
       }
 
       .alignment-title {
-        color: #2c3e50;
-        font-weight: bold;
-        margin-bottom: 10px;
-        font-family: Arial, sans-serif;
-        border-bottom: 2px solid #3498db;
-        padding-bottom: 5px;
+        color: #2c3e50 !important;
+        font-weight: bold !important;
+        margin-bottom: 10px !important;
+        font-family: Arial, sans-serif !important;
+        border-bottom: 2px solid #b22222 !important;
+        padding-bottom: 5px !important;
+        white-space: normal !important;
       }
 
       .alignment-score {
-        color: #7f8c8d;
-        font-style: italic;
-        margin-top: 8px;
-        font-family: Arial, sans-serif;
+        color: #7f8c8d !important;
+        font-style: italic !important;
+        margin-top: 8px !important;
+        font-family: Arial, sans-serif !important;
+        white-space: normal !important;
       }
 
       /* Style pour la règle de numérotation */
       .ruler-line {
         color: #666 !important;
         font-weight: normal !important;
-        border-bottom: 1px solid #ddd;
-        margin-bottom: 2px;
-        padding-bottom: 2px;
-        background: #f9f9f9;
+        border-bottom: 1px solid #ddd !important;
+        margin-bottom: 2px !important;
+        padding-bottom: 2px !important;
+        background: transparent !important;
+        display: block !important;
+        font-family: 'Courier New', monospace !important;
+        line-height: 1.4 !important;
+      }
+
+      /* Lignes de séquences alignées */
+      .sequence-line {
+        font-family: 'Courier New', monospace !important;
+        line-height: 1.4 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        white-space: nowrap !important;
+        display: block !important;
       }
 
       /* Amélioration des tooltips */
       span[title]:hover {
-        background-color: #ffffcc;
-        border-radius: 2px;
+        background-color: #ffffcc !important;
+        border-radius: 2px !important;
       }
 
       /* Style pour les verbatimTextOutput */
@@ -180,9 +203,19 @@ ui_clonage <- shinyUI(navbarPage(
         overflow-y: auto;
       }
 
-      /* Assurer que la police monospace est bien appliquée partout */
-      #align_results * {
+      /* Assurer que la police monospace est bien appliquée dans les alignements */
+      .alignments-container * {
         font-family: 'Courier New', monospace !important;
+      }
+
+      .alignment-title, .alignment-score {
+        font-family: Arial, sans-serif !important;
+      }
+
+      /* Forcer le contenu à ne pas déborder */
+      .alignments-container span {
+        display: inline !important;
+        white-space: nowrap !important;
       }
 
       /* Style pour les notifications */
@@ -197,12 +230,19 @@ ui_clonage <- shinyUI(navbarPage(
         z-index: 9999;
         display: none;
       }
+
+      /* Responsive design */
+      @media (max-width: 768px) {
+        .alignments-container {
+          font-size: 10px !important;
+        }
+      }
     ")),
 
     # JavaScript pour la fonctionnalité de copie
     tags$script(HTML("
       function copyToClipboard() {
-        const alignResults = document.getElementById('align_results');
+        const alignResults = document.querySelector('.alignments-container');
         if (!alignResults) return;
 
         // Créer une version texte propre
@@ -254,7 +294,7 @@ ui_clonage <- shinyUI(navbarPage(
       }
 
       function printAlignment() {
-        const alignResults = document.getElementById('align_results');
+        const alignResults = document.querySelector('.alignments-container');
         if (!alignResults) return;
 
         const printWindow = window.open('', '_blank');

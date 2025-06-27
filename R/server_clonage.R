@@ -65,57 +65,59 @@ server_clonage <- function(input, output, session) {
     text_output <- character()
 
     for (i in seq_along(seqs())) {
-      aln <- Biostrings::pairwiseAlignment(pattern = seqs()[[i]], subject = data_xdna$seq)
+      # Alignement local Smith-Waterman
+      aln <- Biostrings::pairwiseAlignment(
+        pattern = seqs()[[i]],
+        subject = data_xdna$seq,
+        type = "local",
+        substitutionMatrix = nucleotideSubstitutionMatrix(match = 2, mismatch = -1),
+        gapOpening = -2,
+        gapExtension = -1
+      )
 
-      pat <- as.character(pattern(aln))
-      sub <- as.character(subject(aln))
-      annot <- annotate_mutations(pat, sub)
-
+      # Position de l'alignement dans la séquence complète
       aln_start <- start(subject(aln))
+      aln_end <- end(subject(aln))
 
-      colors <- get_color_map(data_xdna$features, aln_start, nchar(sub))
+      # Séquences alignées localement
+      pat_aligned <- as.character(pattern(aln))
+      sub_aligned <- as.character(subject(aln))
+      annot_aligned <- annotate_mutations(pat_aligned, sub_aligned)
 
-      # Générer la règle de numérotation
-      ruler <- generate_ruler(aln_start, nchar(sub))
+      # Créer la séquence pattern complète (gaps partout sauf dans la région alignée)
+      full_pattern <- create_full_pattern_sequence(pat_aligned, aln_start, length(data_xdna$seq))
 
-      pattern_html <- htmlify_line(pat)
-      annot_html <- htmlify_line(annot)
-      subject_colored <- htmlify_line(sub, colors, aln_start)
-      ruler_html <- paste0("<span class='ruler-line'>", htmlify_line(ruler), "</span>")
+      # Séquence de référence complète
+      full_subject <- as.character(data_xdna$seq)
 
-      align_block <- paste0(
-        "<div class='alignment-block'>",
-        "<div class='alignment-title'>Alignement avec ", input$seq_files[i], "</div>",
-        ruler_html, "\n",
-        pattern_html, "\n",
-        annot_html, "\n",
-        subject_colored, "\n",
-        "<div class='alignment-score'>Score : ", score(aln), "</div>",
-        "</div>"
+      # Annotation complète (espaces partout sauf dans la région alignée)
+      full_annot <- create_full_annotation_sequence(annot_aligned, aln_start, length(data_xdna$seq))
+
+      # Couleurs pour toute la séquence de référence (positions 1 à longueur totale)
+      colors <- get_color_map(data_xdna$features, 1, length(data_xdna$seq))
+
+      # Générer l'alignement style SerialCloner
+      blast_alignment <- generate_blast_style_alignment(
+        full_pattern, full_subject, full_annot, aln_start, colors,
+        paste0(input$seq_files[i], " (région alignée: ", aln_start, "-", aln_end, ")")
       )
 
-      # Version texte pour export
-      text_block <- paste0(
-        "=== Alignement avec ", input$seq_files[i], " ===\n",
-        "Score: ", score(aln), "\n",
-        "Position: ", aln_start, "-", aln_start + nchar(sub) - 1, "\n\n",
-        "Ruler:   ", ruler, "\n",
-        "Pattern: ", pat, "\n",
-        "Match:   ", annot, "\n",
-        "Subject: ", sub, "\n\n"
-      )
-
-      align_output <- c(align_output, align_block)
-      text_output <- c(text_output, text_block)
+      align_output <- c(align_output, blast_alignment$html)
+      text_output <- c(text_output, blast_alignment$text)
     }
 
     # Stocker les résultats pour les exports
     alignment_data$results <- align_output
     alignment_data$text_version <- paste(text_output, collapse = "")
 
+    # Structure HTML avec légende fixe + conteneur scrollable
     tags$div(
       id = "align_results",
-      HTML(paste0(legend_html, paste(align_output, collapse = "")))
+      HTML(legend_html),
+      tags$div(
+        class = "alignments-container",
+        HTML(paste(align_output, collapse = ""))
+      )
     )
   })
 
