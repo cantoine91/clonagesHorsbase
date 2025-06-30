@@ -54,11 +54,7 @@ annotate_sequence_mutations <- function(pattern_sequence, subject_sequence) {
   annotation <- character(length(pattern_chars))
 
   for (i in seq_along(pattern_chars)) {
-    pattern_char <- pattern_chars[i]
-    subject_char <- subject_chars[i]
-
-    # Correspondance exacte (pas de gaps)
-    if (pattern_char == subject_char && pattern_char != "-" && subject_char != "-") {
+    if (pattern_chars[i] == subject_chars[i] && pattern_chars[i] != "-" && subject_chars[i] != "-") {
       annotation[i] <- "|"
     } else {
       annotation[i] <- " "
@@ -72,21 +68,16 @@ annotate_sequence_mutations <- function(pattern_sequence, subject_sequence) {
 
 # Extraire la couleur hexadécimale des features GenBank
 extract_serialcloner_color <- function(feature_lines) {
-  # Chercher la ligne contenant SerialCloner_Color
   color_lines <- grep("SerialCloner_Color\\s*=", feature_lines, value = TRUE)
 
   if (length(color_lines) > 0) {
-    # Extraire le code couleur &hXXXXXX
     color_match <- regmatches(color_lines[1], regexpr("&h[0-9A-Fa-f]{6}", color_lines[1]))
-
     if (length(color_match) > 0) {
-      # Convertir &hXXXXXX en #XXXXXX
-      hex_color <- gsub("&h", "#", color_match)
-      return(hex_color)
+      return(gsub("&h", "#", color_match))
     }
   }
 
-  return("#000000") # couleur par défaut
+  return("#000000")
 }
 
 # ==================== PARSING DES FEATURES GENBANK ====================
@@ -97,30 +88,18 @@ parse_genbank_features <- function(features_lines) {
   current_feature <- NULL
   current_feature_lines <- character()
 
-  for (line_number in seq_along(features_lines)) {
-    line <- features_lines[line_number]
-
-    # Détecter une nouvelle feature (commence par 5+ espaces puis le type)
-    # OU juste une position (pour les features malformées)
+  for (i in seq_along(features_lines)) {
+    line <- features_lines[i]
     is_new_feature_with_type <- grepl("^\\s{5,}[a-zA-Z_]+\\s+", line)
     is_position_only <- grepl("^\\s+\\d+\\.\\.\\d+", line)
 
     if (is_new_feature_with_type || is_position_only) {
-
-      # Traiter la feature précédente
       if (!is.null(current_feature)) {
         current_feature$color <- extract_serialcloner_color(current_feature_lines)
         features_list[[length(features_list) + 1]] <- current_feature
       }
 
-      # Extraire le type de feature
-      if (is_new_feature_with_type) {
-        feature_type <- extract_feature_type(line)
-      } else {
-        feature_type <- "misc_feature"  # Type par défaut pour les positions orphelines
-      }
-
-      # Extraire la position
+      feature_type <- if (is_new_feature_with_type) extract_feature_type(line) else "misc_feature"
       position_raw <- extract_feature_position(line)
 
       current_feature <- list(
@@ -130,12 +109,21 @@ parse_genbank_features <- function(features_lines) {
         name = ""
       )
       current_feature_lines <- character()
+
+      # Pour les positions orphelines, regarder la ligne suivante pour le label
+      if (is_position_only && i < length(features_lines)) {
+        next_line <- features_lines[i + 1]
+        if (grepl("/label\\s*=", next_line)) {
+          feature_name <- extract_feature_name(next_line)
+          if (!is.null(feature_name)) {
+            current_feature$name <- feature_name
+          }
+        }
+      }
     }
 
     if (!is.null(current_feature)) {
       current_feature_lines <- c(current_feature_lines, line)
-
-      # Extraire le label ou le nom du gène
       feature_name <- extract_feature_name(line)
       if (!is.null(feature_name) && current_feature$name == "") {
         current_feature$name <- feature_name
@@ -143,7 +131,6 @@ parse_genbank_features <- function(features_lines) {
     }
   }
 
-  # Ajouter la dernière feature
   if (!is.null(current_feature)) {
     current_feature$color <- extract_serialcloner_color(current_feature_lines)
     features_list[[length(features_list) + 1]] <- current_feature
@@ -163,13 +150,11 @@ extract_feature_type <- function(line) {
 
 # Extraire la position de la feature
 extract_feature_position <- function(line) {
-  # Pattern 1: position simple (123..456)
   position_match <- regmatches(line, regexpr("\\d+\\.\\.\\d+", line))
   if (length(position_match) > 0) {
     return(position_match)
   }
 
-  # Pattern 2: complement(123..456)
   complement_match <- regmatches(line, regexpr("complement\\(\\d+\\.\\.\\d+\\)", line))
   if (length(complement_match) > 0) {
     position_match <- regmatches(complement_match, regexpr("\\d+\\.\\.\\d+", complement_match))
@@ -183,25 +168,28 @@ extract_feature_position <- function(line) {
 
 # Extraire le nom de la feature (label ou gene)
 extract_feature_name <- function(line) {
-  # Extraire le label
   if (grepl("/label\\s*=", line)) {
     if (grepl('/label\\s*=\\s*"[^"]*"', line)) {
       label_match <- regmatches(line, regexpr('/label\\s*=\\s*"[^"]*"', line))
       return(gsub('/label\\s*=\\s*"([^"]*)"', '\\1', label_match))
     } else {
-      label_match <- regmatches(line, regexpr('/label\\s*=\\s*[^\\s]+', line))
-      return(gsub('/label\\s*=\\s*', '', label_match))
+      # Pour les labels sans guillemets, prendre tout ce qui suit =
+      label_match <- regmatches(line, regexpr('/label\\s*=\\s*.+', line))
+      if (length(label_match) > 0) {
+        return(gsub('/label\\s*=\\s*', '', label_match))
+      }
     }
   }
 
-  # Extraire gene comme fallback
   if (grepl("/gene\\s*=", line)) {
     if (grepl('/gene\\s*=\\s*"[^"]*"', line)) {
       gene_match <- regmatches(line, regexpr('/gene\\s*=\\s*"[^"]*"', line))
       return(gsub('/gene\\s*=\\s*"([^"]*)"', '\\1', gene_match))
     } else {
-      gene_match <- regmatches(line, regexpr('/gene\\s*=\\s*[^\\s]+', line))
-      return(gsub('/gene\\s*=\\s*', '', gene_match))
+      gene_match <- regmatches(line, regexpr('/gene\\s*=\\s*.+', line))
+      if (length(gene_match) > 0) {
+        return(gsub('/gene\\s*=\\s*', '', gene_match))
+      }
     }
   }
 
@@ -227,7 +215,7 @@ get_color_by_feature_name <- function(feature_name) {
   default_colors <- get_default_feature_colors()
   color <- default_colors[[feature_name]]
   if (is.null(color)) {
-    return("#888888") # Gris par défaut
+    return("#888888")
   }
   return(color)
 }
@@ -245,7 +233,6 @@ build_sequence_color_map <- function(features_lines, alignment_start, sequence_l
       next
     }
 
-    # Parser les positions de début et fin
     position_bounds <- as.numeric(unlist(strsplit(position_string, "\\.\\.")))
     if (length(position_bounds) != 2) {
       next
@@ -254,13 +241,11 @@ build_sequence_color_map <- function(features_lines, alignment_start, sequence_l
     feature_start <- position_bounds[1]
     feature_end <- position_bounds[2]
 
-    # Déterminer la couleur à utiliser
     color_to_use <- feature$color
     if (color_to_use == "#000000") {
       color_to_use <- get_color_by_feature_name(feature$name)
     }
 
-    # Appliquer la couleur aux positions correspondantes
     for (i in seq_len(sequence_length)) {
       reference_position <- alignment_start + i - 1
       if (reference_position >= feature_start && reference_position <= feature_end) {
@@ -289,10 +274,8 @@ generate_color_legend <- function(features_lines) {
     position_bounds <- as.numeric(unlist(strsplit(position_string, "\\.\\.")))
     if (length(position_bounds) != 2) next
 
-    # Nom d'affichage
     display_name <- if (feature$name != "") feature$name else paste("Feature", feature$type)
 
-    # Couleur à utiliser
     color_to_use <- feature$color
     if (color_to_use == "#000000") {
       color_to_use <- get_color_by_feature_name(feature$name)
@@ -329,12 +312,10 @@ generate_colored_alignment <- function(pattern_seq, subject_seq, annotation_seq,
   for (start in seq(1, sequence_length, by = line_length)) {
     end <- min(start + line_length - 1, sequence_length)
 
-    # Extraire les segments
-    subject_segment <- substr(subject_seq, start, end)  # Référence
-    pattern_segment <- substr(pattern_seq, start, end)  # Query
+    subject_segment <- substr(subject_seq, start, end)
+    pattern_segment <- substr(pattern_seq, start, end)
     annotation_segment <- substr(annotation_seq, start, end)
 
-    # Calculer les positions
     subject_start <- start
     subject_end <- end
 
@@ -347,14 +328,12 @@ generate_colored_alignment <- function(pattern_seq, subject_seq, annotation_seq,
       pattern_end <- pattern_bases_before
     }
 
-    # Couleurs pour ce segment
     segment_colors <- if (!is.null(colors) && length(colors) >= end) {
       colors[start:end]
     } else {
       NULL
     }
 
-    # Créer la table HTML
     alignment_table <- create_colored_alignment_table(
       subject_segment, pattern_segment, annotation_segment,
       subject_start, subject_end, pattern_start, pattern_end,
@@ -363,7 +342,6 @@ generate_colored_alignment <- function(pattern_seq, subject_seq, annotation_seq,
 
     html_lines <- c(html_lines, alignment_table)
 
-    # Version texte
     text_lines <- c(text_lines, "")
     text_lines <- c(text_lines, sprintf("Seq_1 %6d %s %d", subject_start, subject_segment, subject_end))
     text_lines <- c(text_lines, sprintf("       %s", annotation_segment))
@@ -382,28 +360,19 @@ generate_colored_alignment <- function(pattern_seq, subject_seq, annotation_seq,
 create_colored_alignment_table <- function(subject_segment, pattern_segment, annotation_segment,
                                            subject_start, subject_end, pattern_start, pattern_end,
                                            segment_colors) {
-  # Diviser en caractères individuels
   subject_chars <- strsplit(subject_segment, "")[[1]]
   pattern_chars <- strsplit(pattern_segment, "")[[1]]
   annotation_chars <- strsplit(annotation_segment, "")[[1]]
 
-  # Style de base pour les cellules
   base_cell_style <- "font-family: Courier New, monospace; text-align: center; padding: 0; margin: 0; border: 0; width: 1ch; min-width: 1ch; max-width: 1ch;"
 
-  # Créer les cellules colorées pour la séquence de référence
   subject_cells <- create_colored_sequence_cells(subject_chars, segment_colors, base_cell_style)
-
-  # Créer les cellules pour l'annotation
   annotation_cells <- create_sequence_cells(annotation_chars, base_cell_style)
-
-  # Créer les cellules pour la séquence query
   pattern_cells <- create_sequence_cells(pattern_chars, base_cell_style)
 
-  # Style pour les préfixes et suffixes
   prefix_style <- "font-family: Courier New, monospace; padding: 0; margin: 0; text-align: left; width: 100px; min-width: 100px; max-width: 100px; white-space: nowrap;"
   suffix_style <- "font-family: Courier New, monospace; padding: 0; margin: 0; text-align: left; width: 60px; min-width: 60px; max-width: 60px;"
 
-  # Construire la table
   table_style <- "border-collapse: collapse; margin: 10px 0; font-family: Courier New, monospace;"
 
   table_html <- paste0(
@@ -435,34 +404,11 @@ create_colored_sequence_cells <- function(sequence_chars, colors, base_style) {
   for (i in seq_along(sequence_chars)) {
     style <- base_style
 
-    # DEBUG: Afficher les couleurs appliquées
     if (!is.null(colors) && i <= length(colors) && !is.na(colors[i])) {
       style <- paste0(style, " color: ", colors[i], "; font-weight: bold;")
-      # Debug pour les premières positions
-      if (i <= 5) {
-        cat("  Cellule", i, ":", sequence_chars[i], "-> couleur:", colors[i], "\n")
-      }
-    } else if (i <= 5) {
-      cat("  Cellule", i, ":", sequence_chars[i], "-> pas de couleur\n")
     }
 
     cells <- c(cells, paste0("<td style='", style, "'>", sequence_chars[i], "</td>"))
-  }
-  return(cells)
-}
-
-# Créer les cellules colorées pour l'annotation (les | prennent la couleur des features)
-create_colored_annotation_cells <- function(annotation_chars, colors, base_style) {
-  cells <- character()
-  for (i in seq_along(annotation_chars)) {
-    style <- base_style
-
-    # Si c'est un | ET qu'il y a une couleur pour cette position
-    if (annotation_chars[i] == "|" && !is.null(colors) && i <= length(colors) && !is.na(colors[i])) {
-      style <- paste0(style, " color: ", colors[i], "; font-weight: bold;")
-    }
-
-    cells <- c(cells, paste0("<td style='", style, "'>", annotation_chars[i], "</td>"))
   }
   return(cells)
 }

@@ -16,12 +16,10 @@ server_clonage <- function(input, output, session) {
 
     origin_line <- grep("^ORIGIN", gb_lines, ignore.case = TRUE)
 
-    # --- Features
     features_block <- gb_lines[1:(origin_line - 1)]
     features_lines <- features_block[grep("^\\s{5}|^\\s{21}", features_block)]
     data_xdna$features <- features_lines
 
-    # --- Séquence propre
     seq_lines <- gb_lines[(origin_line + 1):length(gb_lines)]
     seq_raw <- paste(seq_lines, collapse = "")
     seq_clean <- gsub("[^acgtACGTnN]", "", seq_raw)
@@ -34,7 +32,7 @@ server_clonage <- function(input, output, session) {
     lapply(paths, function(f) {
       lines <- readLines(f, warn = FALSE)
       seq_raw <- paste(lines, collapse = "")
-      seq_clean <- clean_sequence(seq_raw)  # Utiliser la nouvelle fonction
+      seq_clean <- clean_sequence(seq_raw)
       Biostrings::DNAString(seq_clean)
     })
   })
@@ -58,14 +56,12 @@ server_clonage <- function(input, output, session) {
   output$align_results <- renderUI({
     req(data_xdna$seq, seqs())
 
-    # Générer la légende des couleurs avec la nouvelle fonction
     legend_html <- generate_color_legend(data_xdna$features)
 
     align_output <- character()
     text_output <- character()
 
     for (i in seq_along(seqs())) {
-      # Alignement local Smith-Waterman
       aln <- Biostrings::pairwiseAlignment(
         pattern = seqs()[[i]],
         subject = data_xdna$seq,
@@ -75,52 +71,31 @@ server_clonage <- function(input, output, session) {
         gapExtension = -1
       )
 
-      # Position de l'alignement dans la séquence complète
       aln_start <- start(subject(aln))
       aln_end <- end(subject(aln))
 
-      # Séquences alignées localement
       pat_aligned <- as.character(pattern(aln))
       sub_aligned <- as.character(subject(aln))
-      annot_aligned <- annotate_sequence_mutations(pat_aligned, sub_aligned)  # Nouvelle fonction
+      annot_aligned <- annotate_sequence_mutations(pat_aligned, sub_aligned)
 
-      # Créer la séquence pattern complète (gaps partout sauf dans la région alignée)
       full_pattern <- create_full_pattern_with_gaps(pat_aligned, aln_start, length(data_xdna$seq))
-
-      # Séquence de référence complète
       full_subject <- as.character(data_xdna$seq)
-
-      # Annotation complète (espaces partout sauf dans la région alignée)
       full_annot <- create_full_annotation_with_spaces(annot_aligned, aln_start, length(data_xdna$seq))
 
-      # RETOUR à l'affichage de toute la séquence comme demandé
       colors <- build_sequence_color_map(data_xdna$features, 1, length(data_xdna$seq))
 
-      # Debug: Afficher les couleurs trouvées
-      cat("Couleurs mappées:", sum(!is.na(colors)), "positions sur", length(colors), "\n")
-
-      # Générer l'alignement style SerialCloner avec la nouvelle fonction
       blast_alignment <- generate_colored_alignment(
         full_pattern, full_subject, full_annot, aln_start, colors,
         paste0(input$seq_files[i], " (région alignée: ", aln_start, "-", aln_end, ")")
       )
 
-      # DEBUG: Sauvegarder le HTML généré pour inspection
-      cat("=== DEBUG HTML ===\n")
-      html_sample <- substr(blast_alignment$html, 1, 2000)  # Premiers 2000 caractères
-      cat("Échantillon HTML généré:\n")
-      cat(html_sample)
-      cat("\n=== FIN DEBUG HTML ===\n")
-
       align_output <- c(align_output, blast_alignment$html)
       text_output <- c(text_output, blast_alignment$text)
     }
 
-    # Stocker les résultats pour les exports
     alignment_data$results <- align_output
     alignment_data$text_version <- paste(text_output, collapse = "")
 
-    # Structure HTML avec légende fixe + conteneur scrollable
     tags$div(
       id = "align_results",
       HTML(legend_html),
@@ -131,7 +106,6 @@ server_clonage <- function(input, output, session) {
     )
   })
 
-  # Download handlers (inchangés)
   output$download_txt <- downloadHandler(
     filename = function() {
       paste0("alignement_", Sys.Date(), ".txt")
@@ -139,7 +113,6 @@ server_clonage <- function(input, output, session) {
     content = function(file) {
       req(alignment_data$text_version)
 
-      # En-tête
       header <- paste0(
         "=== RESULTATS D'ALIGNEMENT - HGX ===\n",
         "Date: ", Sys.time(), "\n",
@@ -149,7 +122,6 @@ server_clonage <- function(input, output, session) {
         "LEGENDE DES COULEURS:\n"
       )
 
-      # Légende en format texte avec la nouvelle fonction
       feats <- parse_genbank_features(data_xdna$features)
       legend_text <- ""
       for (feat in feats) {
@@ -215,12 +187,10 @@ server_clonage <- function(input, output, session) {
 
       fasta_content <- character()
 
-      # Séquence référence
       fasta_content <- c(fasta_content,
                          paste0(">Sequence_Reference_", gsub("\\.gb$", "", input$carte_xdna)),
                          as.character(data_xdna$seq))
 
-      # Séquences alignées
       for (i in seq_along(seqs())) {
         seq_name <- gsub("\\.seq$", "", input$seq_files[i])
         fasta_content <- c(fasta_content,
