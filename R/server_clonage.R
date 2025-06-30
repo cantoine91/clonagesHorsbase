@@ -34,7 +34,7 @@ server_clonage <- function(input, output, session) {
     lapply(paths, function(f) {
       lines <- readLines(f, warn = FALSE)
       seq_raw <- paste(lines, collapse = "")
-      seq_clean <- clean_seq(seq_raw)
+      seq_clean <- clean_sequence(seq_raw)  # Utiliser la nouvelle fonction
       Biostrings::DNAString(seq_clean)
     })
   })
@@ -58,8 +58,8 @@ server_clonage <- function(input, output, session) {
   output$align_results <- renderUI({
     req(data_xdna$seq, seqs())
 
-    # Générer la légende des couleurs
-    legend_html <- generate_legend(data_xdna$features)
+    # Générer la légende des couleurs avec la nouvelle fonction
+    legend_html <- generate_color_legend(data_xdna$features)
 
     align_output <- character()
     text_output <- character()
@@ -82,25 +82,35 @@ server_clonage <- function(input, output, session) {
       # Séquences alignées localement
       pat_aligned <- as.character(pattern(aln))
       sub_aligned <- as.character(subject(aln))
-      annot_aligned <- annotate_mutations(pat_aligned, sub_aligned)
+      annot_aligned <- annotate_sequence_mutations(pat_aligned, sub_aligned)  # Nouvelle fonction
 
       # Créer la séquence pattern complète (gaps partout sauf dans la région alignée)
-      full_pattern <- create_full_pattern_sequence(pat_aligned, aln_start, length(data_xdna$seq))
+      full_pattern <- create_full_pattern_with_gaps(pat_aligned, aln_start, length(data_xdna$seq))
 
       # Séquence de référence complète
       full_subject <- as.character(data_xdna$seq)
 
       # Annotation complète (espaces partout sauf dans la région alignée)
-      full_annot <- create_full_annotation_sequence(annot_aligned, aln_start, length(data_xdna$seq))
+      full_annot <- create_full_annotation_with_spaces(annot_aligned, aln_start, length(data_xdna$seq))
 
-      # Couleurs pour toute la séquence de référence (positions 1 à longueur totale)
-      colors <- get_color_map(data_xdna$features, 1, length(data_xdna$seq))
+      # RETOUR à l'affichage de toute la séquence comme demandé
+      colors <- build_sequence_color_map(data_xdna$features, 1, length(data_xdna$seq))
 
-      # Générer l'alignement style SerialCloner
-      blast_alignment <- generate_blast_style_alignment(
+      # Debug: Afficher les couleurs trouvées
+      cat("Couleurs mappées:", sum(!is.na(colors)), "positions sur", length(colors), "\n")
+
+      # Générer l'alignement style SerialCloner avec la nouvelle fonction
+      blast_alignment <- generate_colored_alignment(
         full_pattern, full_subject, full_annot, aln_start, colors,
         paste0(input$seq_files[i], " (région alignée: ", aln_start, "-", aln_end, ")")
       )
+
+      # DEBUG: Sauvegarder le HTML généré pour inspection
+      cat("=== DEBUG HTML ===\n")
+      html_sample <- substr(blast_alignment$html, 1, 2000)  # Premiers 2000 caractères
+      cat("Échantillon HTML généré:\n")
+      cat(html_sample)
+      cat("\n=== FIN DEBUG HTML ===\n")
 
       align_output <- c(align_output, blast_alignment$html)
       text_output <- c(text_output, blast_alignment$text)
@@ -121,7 +131,7 @@ server_clonage <- function(input, output, session) {
     )
   })
 
-  # Download handlers
+  # Download handlers (inchangés)
   output$download_txt <- downloadHandler(
     filename = function() {
       paste0("alignement_", Sys.Date(), ".txt")
@@ -139,12 +149,12 @@ server_clonage <- function(input, output, session) {
         "LEGENDE DES COULEURS:\n"
       )
 
-      # Légende en format texte
-      feats <- parse_features(data_xdna$features)
+      # Légende en format texte avec la nouvelle fonction
+      feats <- parse_genbank_features(data_xdna$features)
       legend_text <- ""
       for (feat in feats) {
-        if (!is.na(feat$pos_raw)) {
-          bounds <- as.numeric(unlist(strsplit(feat$pos_raw, "\\.\\.")))
+        if (!is.na(feat$position_raw)) {
+          bounds <- as.numeric(unlist(strsplit(feat$position_raw, "\\.\\.")))
           if (length(bounds) == 2) {
             name_display <- if (feat$name != "") feat$name else "Feature sans nom"
             legend_text <- paste0(legend_text, "- ", name_display, " (", bounds[1], "-", bounds[2], ") - Couleur: ", feat$color, "\n")
@@ -164,7 +174,7 @@ server_clonage <- function(input, output, session) {
     content = function(file) {
       req(alignment_data$results)
 
-      legend_html <- generate_legend(data_xdna$features)
+      legend_html <- generate_color_legend(data_xdna$features)
 
       html_content <- paste0(
         "<!DOCTYPE html>\n<html>\n<head>\n",
