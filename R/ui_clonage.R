@@ -331,7 +331,7 @@ ui_clonage <- shinyUI(navbarPage(
                             style = "background-color: transparent; color: #6c757d; border: 1px solid #ced4da; padding: 8px 12px; border-radius: 4px; flex-grow: 0; min-width: auto;"),
                selectInput("carte_xdna", "Choisir une carte .gb :",
                            choices = NULL),
-               selectInput("seq_files", "Choisir séquence(s) .seq :",
+               selectInput("seq_files", "Choisir séquence(s) .seq (test):",
                            choices = NULL, multiple = TRUE),
                actionButton("align_btn", "Lancer l'alignement",
                             style = "background-color: #b22222; color: white; font-weight: bold; border: none; padding: 8px 16px; border-radius: 4px;")
