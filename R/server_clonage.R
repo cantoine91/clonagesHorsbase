@@ -1,13 +1,35 @@
 library(shiny)
 library(Biostrings)
-library(reticulate)
-
-xdna_dir <- "P:/SEQ/Atest_cae"
-seq_dir <- "P:/SEQ/Atest_cae"
 
 server_clonage <- function(input, output, session) {
   data_xdna <- reactiveValues(seq = NULL, features = NULL)
   alignment_data <- reactiveValues(results = NULL, text_version = NULL)
+
+  # Chemins des répertoires
+  xdna_dir <- "P:/SEQ/Atest_cae"
+  seq_dir <- "P:/SEQ/Atest_cae"
+
+  # Fonction pour lire les fichiers disponibles
+  get_available_files <- function() {
+    gb_files <- list.files(xdna_dir, pattern = "\\.gb$", full.names = FALSE)
+    seq_files <- list.files(seq_dir, pattern = "\\.seq$", full.names = FALSE)
+    list(gb = gb_files, seq = seq_files)
+  }
+
+  # Initialiser les listes au démarrage
+  observe({
+    files <- get_available_files()
+    updateSelectInput(session, "carte_xdna", choices = files$gb)
+    updateSelectInput(session, "seq_files", choices = files$seq)
+  })
+
+  # Rafraîchir les listes quand on clique sur le bouton
+  observeEvent(input$refresh_files, {
+    files <- get_available_files()
+    updateSelectInput(session, "carte_xdna", choices = files$gb)
+    updateSelectInput(session, "seq_files", choices = files$seq)
+    showNotification("📁 Liste des fichiers mise à jour !", type = "message", duration = 2)
+  })
 
   observeEvent(input$align_btn, {
     req(input$carte_xdna)

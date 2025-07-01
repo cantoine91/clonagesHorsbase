@@ -1,9 +1,6 @@
 library(shiny)
 library(shinythemes)
 
-xdna_dir <- "P:/SEQ/Atest_cae"
-seq_dir <- "P:/SEQ/Atest_cae"
-
 ui_clonage <- shinyUI(navbarPage(
   title = div(style = "color: white; font-weight: bold; font-size: 20px;", "HGX"),
   id = "navbar",
@@ -328,13 +325,14 @@ ui_clonage <- shinyUI(navbarPage(
 
   tabPanel("Clonages Hors Base",
 
-           # Conteneur options en haut full width
+           # Conteneur options en haut full width - Version simple
            div(id = "input_container",
+               actionButton("refresh_files", "🔄",
+                            style = "background-color: transparent; color: #6c757d; border: 1px solid #ced4da; padding: 8px 12px; border-radius: 4px; flex-grow: 0; min-width: auto;"),
                selectInput("carte_xdna", "Choisir une carte .gb :",
-                           choices = list.files(xdna_dir, pattern = "\\.gb$", full.names = FALSE)),
+                           choices = NULL),
                selectInput("seq_files", "Choisir séquence(s) .seq :",
-                           choices = list.files(seq_dir, pattern = "\\.seq$", full.names = FALSE),
-                           multiple = TRUE),
+                           choices = NULL, multiple = TRUE),
                actionButton("align_btn", "Lancer l'alignement",
                             style = "background-color: #b22222; color: white; font-weight: bold; border: none; padding: 8px 16px; border-radius: 4px;")
            ),
