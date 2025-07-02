@@ -519,9 +519,11 @@ create_colored_alignment_table <- function(subject_segment, pattern_segment, ann
 
   base_cell_style <- "font-family: Courier New, monospace; text-align: center; padding: 0; margin: 0; border: 0; width: 1ch; min-width: 1ch; max-width: 1ch;"
 
-  subject_cells <- create_colored_sequence_cells(subject_chars, segment_colors, base_cell_style, restriction_positions)
-  annotation_cells <- create_sequence_cells(annotation_chars, base_cell_style)
-  pattern_cells <- create_sequence_cells(pattern_chars, base_cell_style)
+  # Créer les cellules avec tooltips
+  subject_cells <- create_colored_sequence_cells(subject_chars, segment_colors, base_cell_style,
+                                                 restriction_positions, subject_start, "subject")
+  annotation_cells <- create_sequence_cells(annotation_chars, base_cell_style, 1, "annotation")
+  pattern_cells <- create_sequence_cells(pattern_chars, base_cell_style, pattern_start, "pattern")
 
   prefix_style <- "font-family: Courier New, monospace; padding: 0; margin: 0; text-align: left; width: 100px; min-width: 100px; max-width: 100px; white-space: nowrap;"
   suffix_style <- "font-family: Courier New, monospace; padding: 0; margin: 0; text-align: left; width: 60px; min-width: 60px; max-width: 60px;"
@@ -552,13 +554,16 @@ create_colored_alignment_table <- function(subject_segment, pattern_segment, ann
 }
 
 # Créer les cellules colorées pour une séquence avec sites de restriction
-create_colored_sequence_cells <- function(sequence_chars, colors, base_style, restriction_positions = NULL) {
+create_colored_sequence_cells <- function(sequence_chars, colors, base_style, restriction_positions = NULL, start_position = 1, sequence_type = "subject") {
   cells <- character()
 
   for (i in seq_along(sequence_chars)) {
-    style <- base_style
+    style <- paste0(base_style, " position: relative; cursor: pointer;")
 
-    # Appliquer les couleurs normales (comme avant)
+    # Calculer la position réelle dans la séquence
+    real_position <- start_position + i - 1
+
+    # Appliquer les couleurs normales
     if (!is.null(colors) && i <= length(colors) && !is.na(colors[i])) {
       style <- paste0(style, " color: ", colors[i], "; font-weight: bold;")
     }
@@ -568,16 +573,55 @@ create_colored_sequence_cells <- function(sequence_chars, colors, base_style, re
       style <- paste0(style, " background-color: #D3D3D3; border: 1px solid #999; border-radius: 2px;")
     }
 
-    cells <- c(cells, paste0("<td style='", style, "'>", sequence_chars[i], "</td>"))
+    # Créer le tooltip avec les informations de position
+    tooltip_text <- paste0("Position: ", real_position, " | Nucléotide: ", sequence_chars[i])
+    if (sequence_type == "pattern") {
+      tooltip_text <- paste0(tooltip_text, " (Séquence test)")
+    } else {
+      tooltip_text <- paste0(tooltip_text, " (Séquence référence)")
+    }
+
+    tooltip_html <- paste0('<span class="tooltip">', tooltip_text, '</span>')
+
+    cells <- c(cells, paste0('<td class="nucleotide-cell" style="', style, '">',
+                             sequence_chars[i], tooltip_html, '</td>'))
   }
   return(cells)
 }
 
 # Créer les cellules normales pour une séquence
-create_sequence_cells <- function(sequence_chars, base_style) {
+create_sequence_cells <- function(sequence_chars, base_style, start_position = 1, sequence_type = "pattern") {
   cells <- character()
   for (i in seq_along(sequence_chars)) {
-    cells <- c(cells, paste0('<td style="', base_style, '">', sequence_chars[i], '</td>'))
+    style <- paste0(base_style, " position: relative; cursor: pointer;")
+
+    # Pour les séquences pattern, calculer la position en excluant les gaps
+    if (sequence_type == "pattern") {
+      # Compter seulement les nucléotides non-gap jusqu'à cette position
+      chars_before <- sequence_chars[1:(i-1)]
+      non_gap_before <- sum(chars_before != "-")
+      real_position <- start_position + non_gap_before
+
+      if (sequence_chars[i] == "-") {
+        tooltip_text <- "Gap (insertion dans la référence)"
+      } else {
+        tooltip_text <- paste0("Position: ", real_position, " | Nucléotide: ", sequence_chars[i], " (Séquence test)")
+      }
+    } else {
+      # Pour les annotations, pas de tooltip
+      tooltip_text <- ""
+    }
+
+    tooltip_html <- if (tooltip_text != "" && sequence_chars[i] != " ") {
+      paste0('<span class="tooltip">', tooltip_text, '</span>')
+    } else {
+      ""
+    }
+
+    cell_class <- if (tooltip_text != "" && sequence_chars[i] != " ") "nucleotide-cell" else ""
+
+    cells <- c(cells, paste0('<td class="', cell_class, '" style="', style, '">',
+                             sequence_chars[i], tooltip_html, '</td>'))
   }
   return(cells)
 }

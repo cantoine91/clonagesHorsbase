@@ -7,7 +7,7 @@ ui_clonage <- shinyUI(navbarPage(
   theme = shinytheme("united"),
   windowTitle = "Titre fenêtre navigateur",
 
-  # Ajouter les styles pour l'affichage côte à côte
+  # Ajouter les styles pour l'affichage côte à côte et les tooltips
   header = tags$head(
     tags$style(HTML("
       .results-container {
@@ -62,6 +62,56 @@ ui_clonage <- shinyUI(navbarPage(
         border-bottom: 2px solid #b22222;
         padding-bottom: 5px;
         white-space: normal;
+      }
+
+      /* Styles pour les tooltips */
+      .nucleotide-cell {
+        position: relative;
+        cursor: pointer;
+      }
+
+      .nucleotide-cell:hover {
+        background-color: #e3f2fd !important;
+        border: 1px solid #2196f3 !important;
+        z-index: 1000;
+        border-radius: 3px !important;
+      }
+
+      .tooltip {
+        visibility: hidden;
+        background-color: #333;
+        color: white;
+        text-align: center;
+        border-radius: 4px;
+        padding: 5px 8px;
+        position: absolute;
+        z-index: 1001;
+        bottom: 125%;
+        left: 50%;
+        margin-left: -60px;
+        opacity: 0;
+        transition: opacity 0.3s;
+        font-size: 11px;
+        white-space: nowrap;
+        pointer-events: none;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        min-width: 120px;
+      }
+
+      .tooltip::after {
+        content: '';
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        margin-left: -5px;
+        border-width: 5px;
+        border-style: solid;
+        border-color: #333 transparent transparent transparent;
+      }
+
+      .nucleotide-cell:hover .tooltip {
+        visibility: visible;
+        opacity: 1;
       }
     ")),
 
@@ -134,6 +184,15 @@ ui_clonage <- shinyUI(navbarPage(
                  h4("📊 Informations", style = "color: #b22222; margin-top: 0;"),
                  verbatimTextOutput("seq_xdna"),
                  verbatimTextOutput("seqs_selected")
+               ),
+
+               # Instructions pour les tooltips
+               conditionalPanel(
+                 condition = "output.align_results",
+                 div(style = "background: #e8f5e8; padding: 10px; border-radius: 4px; margin: 10px 0; border-left: 4px solid #4caf50;",
+                     tags$p(style = "margin: 0; font-size: 13px; color: #2e7d32;",
+                            "💡 ", tags$strong("Astuce:"), " Survolez les nucléotides dans l'alignement pour voir leur position exacte dans la séquence !")
+                 )
                ),
 
                # Boutons d'export
