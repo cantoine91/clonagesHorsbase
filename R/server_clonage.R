@@ -7,7 +7,9 @@ server_clonage <- function(input, output, session) {
 
   # Chemins des répertoires
   xdna_dir <- "P:/SEQ/Atest_cae"
+  #../data/genbank
   seq_dir <- "P:/SEQ/Atest_cae"
+  #../data/seq
 
   # Fonction pour lire les fichiers disponibles
   get_available_files <- function() {
@@ -31,18 +33,85 @@ server_clonage <- function(input, output, session) {
     showNotification("📁 Liste des fichiers mise à jour !", type = "message", duration = 2)
   })
 
+  # NOUVEAU : Sites de restriction
+  restriction_sites <- reactive({
+    req(data_xdna$seq)
+    sites_list <- list()
+    enzymes <- get_restriction_enzymes()
+
+    if (!is.null(input$enzyme1) && input$enzyme1 != "") {
+      sites1 <- find_restriction_sites(data_xdna$seq, enzymes[[input$enzyme1]])
+      if (length(sites1) > 0) sites_list[[input$enzyme1]] <- sites1
+    }
+
+    if (!is.null(input$enzyme2) && input$enzyme2 != "") {
+      sites2 <- find_restriction_sites(data_xdna$seq, enzymes[[input$enzyme2]])
+      if (length(sites2) > 0) sites_list[[input$enzyme2]] <- sites2
+    }
+
+    return(sites_list)
+  })
+
+  # NOUVEAU : Affichage info
+  output$restriction_info <- renderText({
+    sites <- restriction_sites()
+    if (length(sites) == 0) return("Aucun site trouvé")
+
+    info <- sapply(names(sites), function(e) paste0(e, ": ", length(sites[[e]]), " site(s)"))
+    paste(info, collapse = " | ")
+  })
+
   observeEvent(input$align_btn, {
     req(input$carte_xdna)
     fichier <- file.path(xdna_dir, input$carte_xdna)
-    gb_lines <- readLines(fichier, warn = FALSE)
 
-    origin_line <- grep("^ORIGIN", gb_lines, ignore.case = TRUE)
+    # Lecture avec gestion d'encodage améliorée
+    tryCatch({
+      # Essayer d'abord UTF-8
+      gb_lines <- readLines(fichier, warn = FALSE, encoding = "UTF-8")
+    }, error = function(e) {
+      # Si UTF-8 échoue, essayer latin1
+      tryCatch({
+        gb_lines <- readLines(fichier, warn = FALSE, encoding = "latin1")
+      }, error = function(e2) {
+        # En dernier recours, lecture brute
+        gb_lines <- readLines(fichier, warn = FALSE)
+      })
+    })
 
-    features_block <- gb_lines[1:(origin_line - 1)]
-    features_lines <- features_block[grep("^\\s{5}|^\\s{21}", features_block)]
+    # Nettoyer les caractères problématiques
+    gb_lines <- iconv(gb_lines, to = "UTF-8", sub = "")
+    gb_lines <- gb_lines[!is.na(gb_lines)]  # Supprimer les lignes NA
+
+    # Remplacer les caractères problématiques courants
+    gb_lines <- gsub("[^\x01-\x7F]", "", gb_lines)  # Supprimer caractères non-ASCII
+
+    # Trouver ORIGIN avec gestion d'erreurs
+    origin_line <- tryCatch({
+      grep("^ORIGIN", gb_lines, ignore.case = TRUE)
+    }, warning = function(w) {
+      # Si grep échoue, chercher manuellement
+      which(grepl("^ORIGIN", gb_lines, ignore.case = TRUE))
+    })
+
+    if (length(origin_line) == 0) {
+      showNotification("Erreur: Section ORIGIN non trouvée dans le fichier GenBank", type = "error")
+      return()
+    }
+
+    features_block <- gb_lines[1:(origin_line[1] - 1)]
+
+    # Extraction des features avec gestion d'erreurs
+    features_lines <- tryCatch({
+      features_block[grep("^\\s{5}|^\\s{21}", features_block)]
+    }, warning = function(w) {
+      # Méthode alternative si grep échoue
+      features_block[grepl("^\\s{5}|^\\s{21}", features_block)]
+    })
+
     data_xdna$features <- features_lines
 
-    seq_lines <- gb_lines[(origin_line + 1):length(gb_lines)]
+    seq_lines <- gb_lines[(origin_line[1] + 1):length(gb_lines)]
     seq_raw <- paste(seq_lines, collapse = "")
     seq_clean <- gsub("[^acgtACGTnN]", "", seq_raw)
     data_xdna$seq <- Biostrings::DNAString(toupper(seq_clean))
@@ -78,7 +147,7 @@ server_clonage <- function(input, output, session) {
   output$align_results <- renderUI({
     req(data_xdna$seq, seqs())
 
-    legend_html <- generate_color_legend(data_xdna$features)
+    legend_content <- generate_color_legend(data_xdna$features, restriction_sites())
 
     align_output <- character()
     text_output <- character()
@@ -105,10 +174,12 @@ server_clonage <- function(input, output, session) {
       full_annot <- create_full_annotation_with_spaces(annot_aligned, aln_start, length(data_xdna$seq))
 
       colors <- build_sequence_color_map(data_xdna$features, 1, length(data_xdna$seq))
+      restriction_positions <- build_restriction_position_map(length(data_xdna$seq), restriction_sites())
 
       blast_alignment <- generate_colored_alignment(
         full_pattern, full_subject, full_annot, aln_start, colors,
-        paste0(input$seq_files[i], " (région alignée: ", aln_start, "-", aln_end, ")")
+        paste0(input$seq_files[i], " (région alignée: ", aln_start, "-", aln_end, ")"),
+        restriction_positions
       )
 
       align_output <- c(align_output, blast_alignment$html)
@@ -118,9 +189,14 @@ server_clonage <- function(input, output, session) {
     alignment_data$results <- align_output
     alignment_data$text_version <- paste(text_output, collapse = "")
 
+    # Structure avec légende à gauche et alignements à droite
     tags$div(
       id = "align_results",
-      HTML(legend_html),
+      class = "results-container",
+      tags$div(
+        class = "legend-container",
+        HTML(legend_content)
+      ),
       tags$div(
         class = "alignments-container",
         HTML(paste(align_output, collapse = ""))
@@ -156,6 +232,18 @@ server_clonage <- function(input, output, session) {
         }
       }
 
+      # Ajouter les sites de restriction au fichier texte
+      sites <- restriction_sites()
+      if (length(sites) > 0) {
+        legend_text <- paste0(legend_text, "\nSITES DE RESTRICTION:\n")
+        enzymes <- get_restriction_enzymes()
+        for (enzyme_name in names(sites)) {
+          enzyme_sites <- sites[[enzyme_name]]
+          enzyme_seq <- enzymes[[enzyme_name]]
+          legend_text <- paste0(legend_text, "- ", enzyme_name, " (", enzyme_seq, ") - Sites: ", paste(enzyme_sites, collapse = ", "), "\n")
+        }
+      }
+
       content <- paste0(header, legend_text, "\n", alignment_data$text_version)
       writeLines(content, file, useBytes = TRUE)
     }
@@ -188,12 +276,26 @@ server_clonage <- function(input, output, session) {
         "<strong>Date:</strong> ", Sys.time(), "<br>\n",
         "<strong>Carte GenBank:</strong> ", input$carte_xdna, "<br>\n",
         "<strong>Fichiers séquences:</strong> ", paste(input$seq_files, collapse = ", "), "<br>\n",
-        "<strong>Longueur séquence référence:</strong> ", length(data_xdna$seq), " nt\n",
-        "</div>\n",
-        "<div class='alignment-results'>\n",
-        legend_html,
-        paste(alignment_data$results, collapse = ""),
-        "</div>\n</body>\n</html>"
+        "<strong>Longueur séquence référence:</strong> ", length(data_xdna$seq), " nt\n"
+      )
+
+      # Ajouter les informations sur les enzymes si sélectionnées
+      sites <- restriction_sites()
+      if (length(sites) > 0) {
+        enzyme_info <- character()
+        for (enzyme_name in names(sites)) {
+          enzyme_sites <- sites[[enzyme_name]]
+          enzyme_info <- c(enzyme_info, paste0(enzyme_name, ": ", length(enzyme_sites), " site(s)"))
+        }
+        html_content <- paste0(html_content, "<br><strong>Sites de restriction:</strong> ", paste(enzyme_info, collapse = ", "), "\n")
+      }
+
+      html_content <- paste0(html_content,
+                             "</div>\n",
+                             "<div class='alignment-results'>\n",
+                             legend_html,
+                             paste(alignment_data$results, collapse = ""),
+                             "</div>\n</body>\n</html>"
       )
 
       writeLines(html_content, file, useBytes = TRUE)

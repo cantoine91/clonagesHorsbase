@@ -8,6 +8,148 @@ clean_sequence <- function(sequence_text) {
   toupper(sequence_text)
 }
 
+# ==================== FONCTIONS SITES DE RESTRICTION ====================
+
+# Base de données des enzymes de restriction communes
+get_restriction_enzymes <- function() {
+  return(list(
+    "EcoRI" = "GAATTC",
+    "BamHI" = "GGATCC",
+    "HindIII" = "AAGCTT",
+    "XhoI" = "CTCGAG",
+    "SalI" = "GTCGAC",
+    "NotI" = "GCGGCCGC",
+    "XbaI" = "TCTAGA",
+    "SpeI" = "ACTAGT",
+    "KpnI" = "GGTACC",
+    "SacI" = "GAGCTC",
+    "BglII" = "AGATCT",
+    "PstI" = "CTGCAG",
+    "SmaI" = "CCCGGG",
+    "ApaI" = "GGGCCC",
+    "ClaI" = "ATCGAT",
+    "NdeI" = "CATATG",
+    "NcoI" = "CCATGG",
+    "BspEI" = "TCCGGA",
+    "AflII" = "CTTAAG",
+    "MluI" = "ACGCGT",
+    "AscI" = "GGCGCGCC",
+    "PacI" = "TTAATTAA",
+    "SbfI" = "CCTGCAGG",
+    "AvrII" = "CCTAGG",
+    "NheI" = "GCTAGC",
+    "BssHII" = "GCGCGC",
+    "PmeI" = "GTTTAAAC",
+    "SrfI" = "GCCCGGGC",
+    "HpaI" = "GTTAAC",
+    "ScaI" = "AGTACT"
+  ))
+}
+
+# Trouver les sites d'une enzyme
+find_restriction_sites <- function(sequence, enzyme_sequence) {
+  if (is.null(sequence) || is.null(enzyme_sequence) || enzyme_sequence == "") {
+    return(integer(0))
+  }
+
+  if (class(sequence)[1] == "DNAString") {
+    sequence <- as.character(sequence)
+  }
+
+  sequence <- toupper(sequence)
+  enzyme_sequence <- toupper(enzyme_sequence)
+
+  # Utiliser gregexpr pour trouver TOUTES les occurrences d'un coup
+  matches <- gregexpr(enzyme_sequence, sequence, fixed = TRUE)[[1]]
+
+  # Si aucune correspondance trouvée
+  if (matches[1] == -1) {
+    return(integer(0))
+  }
+
+  # Retourner toutes les positions
+  return(as.integer(matches))
+}
+
+# Créer une carte des positions de sites de restriction
+build_restriction_position_map <- function(sequence_length, restriction_sites, alignment_start = 1) {
+  is_restriction <- rep(FALSE, sequence_length)
+
+  if (!is.null(restriction_sites) && length(restriction_sites) > 0) {
+    enzymes <- get_restriction_enzymes()
+
+    for (enzyme_name in names(restriction_sites)) {
+      sites <- restriction_sites[[enzyme_name]]
+      if (length(sites) > 0) {
+        site_length <- nchar(enzymes[[enzyme_name]])
+
+        for (site_pos in sites) {
+          for (i in 0:(site_length - 1)) {
+            pos <- site_pos + i
+            if (pos >= alignment_start && pos <= (alignment_start + sequence_length - 1)) {
+              map_pos <- pos - alignment_start + 1
+              if (map_pos > 0 && map_pos <= sequence_length) {
+                is_restriction[map_pos] <- TRUE
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return(is_restriction)
+}
+
+# Combiner les couleurs des features et des sites de restriction
+combine_color_maps <- function(feature_colors, restriction_colors, sequence_length) {
+  combined_colors <- rep(NA, sequence_length)
+
+  for (i in 1:sequence_length) {
+    if (!is.na(restriction_colors[i])) {
+      # Priorité aux sites de restriction
+      combined_colors[i] <- restriction_colors[i]
+    } else if (!is.na(feature_colors[i])) {
+      combined_colors[i] <- feature_colors[i]
+    }
+  }
+
+  return(combined_colors)
+}
+
+# Générer la légende pour les sites de restriction
+generate_restriction_legend_formatted <- function(restriction_sites_list) {
+  if (length(restriction_sites_list) == 0) {
+    return("")
+  }
+
+  colors <- c("#FF0000", "#0000FF", "#00FF00", "#FF8000", "#8000FF", "#00FFFF")
+  legend_items <- character()
+
+  site_index <- 1
+  for (enzyme_name in names(restriction_sites_list)) {
+    sites <- restriction_sites_list[[enzyme_name]]
+    if (length(sites) > 0) {
+      color <- colors[((site_index - 1) %% length(colors)) + 1]
+      enzymes <- get_restriction_enzymes()
+      enzyme_seq <- enzymes[[enzyme_name]]
+
+      sites_text <- paste(sites, collapse = ", ")
+      legend_items <- c(legend_items,
+                        paste0("<div style='margin-bottom: 5px;'><span style='color:", color, "; font-weight: bold; font-size: 16px;'>■</span> ",
+                               "<span style='font-size: 12px;'>", enzyme_name, " (", enzyme_seq, ") - Sites: ", sites_text, "</span></div>"))
+      site_index <- site_index + 1
+    }
+  }
+
+  if (length(legend_items) > 0) {
+    return(paste0("<h4 style='margin-top: 15px; color: #b22222;'>Sites de restriction</h4>",
+                  paste(legend_items, collapse = "")))
+  }
+
+  return("")
+}
+
 # ==================== FONCTIONS D'ALIGNEMENT ====================
 
 # Créer la séquence pattern complète avec gaps
@@ -260,13 +402,11 @@ build_sequence_color_map <- function(features_lines, alignment_start, sequence_l
 # ==================== GÉNÉRATION DE LA LÉGENDE ====================
 
 # Générer la légende HTML des couleurs
-generate_color_legend <- function(features_lines) {
+generate_color_legend <- function(features_lines, restriction_sites_list = NULL) {
   features_list <- parse_genbank_features(features_lines)
-  if (length(features_list) == 0) {
-    return("<div id='legend-fixed'><b>Aucune annotation de couleur trouvée</b></div>")
-  }
-
   legend_items <- character()
+
+  # Légende des features
   for (feature in features_list) {
     position_string <- feature$position_raw
     if (is.na(position_string)) next
@@ -282,22 +422,30 @@ generate_color_legend <- function(features_lines) {
     }
 
     legend_items <- c(legend_items,
-                      paste0("<span style='color:", color_to_use, "; font-weight: bold;'>■</span> ",
-                             display_name, " (", position_bounds[1], "-", position_bounds[2], ")"))
+                      paste0("<div style='margin-bottom: 5px;'><span style='color:", color_to_use, "; font-weight: bold; font-size: 16px;'>■</span> ",
+                             "<span style='font-size: 12px;'>", display_name, " (", position_bounds[1], "-", position_bounds[2], ")</span></div>"))
   }
 
-  result <- paste0("<div id='legend-fixed'>",
-                   "<b>Légende des couleurs :</b><br>",
-                   paste(legend_items, collapse = "<br>"),
-                   "</div>")
+  legend_content <- if (length(legend_items) > 0) {
+    paste0("<h4 style='margin-top: 0; color: #b22222;'>Légende des couleurs</h4>",
+           paste(legend_items, collapse = ""))
+  } else {
+    "<h4 style='margin-top: 0; color: #b22222;'>Aucune annotation trouvée</h4>"
+  }
 
-  return(result)
+  # Ajouter la légende des sites de restriction si elle existe
+  restriction_legend <- ""
+  if (!is.null(restriction_sites_list) && length(restriction_sites_list) > 0) {
+    restriction_legend <- generate_restriction_legend_formatted(restriction_sites_list)
+  }
+
+  # Retourner le contenu formaté pour le conteneur de légende
+  return(paste0(legend_content, restriction_legend))
 }
 
 # ==================== GÉNÉRATION DES ALIGNEMENTS ====================
 
-# Générer un alignement style BLAST avec coloration
-generate_colored_alignment <- function(pattern_seq, subject_seq, annotation_seq, start_position, colors, filename) {
+generate_colored_alignment <- function(pattern_seq, subject_seq, annotation_seq, start_position, colors, filename, restriction_positions = NULL) {
   line_length <- 60
   sequence_length <- nchar(subject_seq)
 
@@ -334,10 +482,16 @@ generate_colored_alignment <- function(pattern_seq, subject_seq, annotation_seq,
       NULL
     }
 
+    segment_restrictions <- if (!is.null(restriction_positions) && length(restriction_positions) >= end) {
+      restriction_positions[start:end]
+    } else {
+      NULL
+    }
+
     alignment_table <- create_colored_alignment_table(
       subject_segment, pattern_segment, annotation_segment,
       subject_start, subject_end, pattern_start, pattern_end,
-      segment_colors
+      segment_colors, segment_restrictions
     )
 
     html_lines <- c(html_lines, alignment_table)
@@ -356,17 +510,16 @@ generate_colored_alignment <- function(pattern_seq, subject_seq, annotation_seq,
   ))
 }
 
-# Créer une table HTML pour l'alignement coloré
 create_colored_alignment_table <- function(subject_segment, pattern_segment, annotation_segment,
                                            subject_start, subject_end, pattern_start, pattern_end,
-                                           segment_colors) {
+                                           segment_colors, restriction_positions = NULL) {
   subject_chars <- strsplit(subject_segment, "")[[1]]
   pattern_chars <- strsplit(pattern_segment, "")[[1]]
   annotation_chars <- strsplit(annotation_segment, "")[[1]]
 
   base_cell_style <- "font-family: Courier New, monospace; text-align: center; padding: 0; margin: 0; border: 0; width: 1ch; min-width: 1ch; max-width: 1ch;"
 
-  subject_cells <- create_colored_sequence_cells(subject_chars, segment_colors, base_cell_style)
+  subject_cells <- create_colored_sequence_cells(subject_chars, segment_colors, base_cell_style, restriction_positions)
   annotation_cells <- create_sequence_cells(annotation_chars, base_cell_style)
   pattern_cells <- create_sequence_cells(pattern_chars, base_cell_style)
 
@@ -398,14 +551,21 @@ create_colored_alignment_table <- function(subject_segment, pattern_segment, ann
   return(table_html)
 }
 
-# Créer les cellules colorées pour une séquence
-create_colored_sequence_cells <- function(sequence_chars, colors, base_style) {
+# Créer les cellules colorées pour une séquence avec sites de restriction
+create_colored_sequence_cells <- function(sequence_chars, colors, base_style, restriction_positions = NULL) {
   cells <- character()
+
   for (i in seq_along(sequence_chars)) {
     style <- base_style
 
+    # Appliquer les couleurs normales (comme avant)
     if (!is.null(colors) && i <= length(colors) && !is.na(colors[i])) {
       style <- paste0(style, " color: ", colors[i], "; font-weight: bold;")
+    }
+
+    # Ajouter le fond gris si c'est un site de restriction
+    if (!is.null(restriction_positions) && i <= length(restriction_positions) && restriction_positions[i]) {
+      style <- paste0(style, " background-color: #D3D3D3; border: 1px solid #999; border-radius: 2px;")
     }
 
     cells <- c(cells, paste0("<td style='", style, "'>", sequence_chars[i], "</td>"))
