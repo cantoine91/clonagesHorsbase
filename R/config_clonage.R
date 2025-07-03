@@ -114,9 +114,34 @@ display_config_info <- function(config) {
   cat("   - GenBank accessible:", dir.exists(config$xdna_dir), "\n")
   cat("   - Séquences accessibles:", dir.exists(config$seq_dir), "\n")
 
+  # Debug détaillé des montages
+  cat("\n🔍 Debug montages:\n")
+  cat("   - /data existe:", dir.exists("/data"), "\n")
+  cat("   - /data/production existe:", dir.exists("/data/production"), "\n")
+  cat("   - /data/production/SEQ existe:", dir.exists("/data/production/SEQ"), "\n")
+
+  # Lister le contenu de /data si accessible
+  if (dir.exists("/data")) {
+    data_content <- list.dirs("/data", recursive = FALSE, full.names = FALSE)
+    cat("   - Contenu de /data:", paste(data_content, collapse = ", "), "\n")
+  }
+
+  # Lister les points de montage
+  cat("\n💽 Points de montage disponibles:\n")
+  mount_points <- c("/", "/data", "/srv", "/tmp", "/var", "/home")
+  for (mp in mount_points) {
+    if (dir.exists(mp)) {
+      content <- try(list.dirs(mp, recursive = FALSE, full.names = FALSE), silent = TRUE)
+      if (!inherits(content, "try-error") && length(content) > 0) {
+        cat("   -", mp, ":", paste(head(content, 5), collapse = ", "), "\n")
+      }
+    }
+  }
+
   # Affichage du contenu des dossiers (si accessibles)
   if (dir.exists(config$xdna_dir)) {
     gb_files <- list.files(config$xdna_dir, pattern = "\\.gb$")
+    cat("\n📄 Fichiers GenBank:\n")
     cat("   - Fichiers .gb trouvés:", length(gb_files), "\n")
     if (length(gb_files) > 0) {
       cat("     Exemples:", paste(head(gb_files, 3), collapse = ", "), "\n")
@@ -125,7 +150,8 @@ display_config_info <- function(config) {
 
   if (dir.exists(config$seq_dir)) {
     seq_folders <- list.dirs(config$seq_dir, recursive = FALSE, full.names = FALSE)
-    cat("   - Dossiers séquences:", length(seq_folders), "\n")
+    cat("\n📁 Dossiers séquences:\n")
+    cat("   - Dossiers trouvés:", length(seq_folders), "\n")
     if (length(seq_folders) > 0) {
       cat("     Exemples:", paste(head(seq_folders, 3), collapse = ", "), "\n")
     }
