@@ -38,9 +38,31 @@ server_clonage <- function(input, output, session) {
   # CONFIGURATION DES CHEMINS
   # ==============================================================================
 
-  # Répertoires de travail
-  xdna_dir <- "P:/SEQ/Atest_cae"    # Dossier des fichiers GenBank
-  seq_base_dir <- "P:/SEQ"          # Dossier racine des séquences
+  # Répertoires de travail (à adapter selon votre environnement)
+  # Production : "/data/production/SEQ/..."
+  # Local Windows : "P:/SEQ/..."
+
+  # Détection automatique de l'environnement
+  if (dir.exists("/data/production/SEQ")) {
+    # Environnement Docker/Production
+    xdna_dir <- "/data/production/SEQ/Atest_cae"      # Fichiers GenBank (.gb)
+    seq_base_dir <- "/data/production/SEQ"            # Dossiers avec fichiers .seq
+  } else if (dir.exists("../data/production/SEQ")) {
+    # Environnement de développement relatif
+    xdna_dir <- "../data/production/SEQ/Atest_cae"
+    seq_base_dir <- "../data/production/SEQ"
+  } else {
+    # Fallback Windows (développement local)
+    xdna_dir <- "P:/SEQ/Atest_cae"
+    seq_base_dir <- "P:/SEQ"
+  }
+
+  # Affichage des chemins utilisés (pour debug)
+  cat("📁 Chemins configurés:\n")
+  cat("   - GenBank (.gb):", xdna_dir, "\n")
+  cat("   - Séquences (.seq):", seq_base_dir, "\n")
+  cat("   - GenBank existe:", dir.exists(xdna_dir), "\n")
+  cat("   - Séquences existe:", dir.exists(seq_base_dir), "\n")
 
   # ==============================================================================
   # FONCTIONS DE RECHERCHE ULTRA-RAPIDE
@@ -95,7 +117,7 @@ server_clonage <- function(input, output, session) {
         incProgress(0.4, detail = paste("Sélectionné:", basename(selected_folder), "en", round(total_time, 2), "s"))
 
         # Logs de diagnostic
-        print(paste("✅ Recherche terminée en", round(total_time, 2), "secondes"))
+        print(paste("✅ Recherche ultra-rapide terminée en", round(total_time, 2), "secondes"))
         print(paste("📂 Dossiers trouvés:", length(matching_folders)))
         print(paste("🏆 Dossier sélectionné:", basename(selected_folder)))
 
