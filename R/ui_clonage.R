@@ -1,3 +1,9 @@
+# ==============================================================================
+# UI_CLONAGE.R
+# Interface utilisateur pour l'application Shiny HGX - Module Clonage
+# Interface de recherche et alignement de séquences ADN
+# ==============================================================================
+
 library(shiny)
 library(shinythemes)
 
@@ -5,17 +11,21 @@ ui_clonage <- shinyUI(navbarPage(
   title = div(style = "color: white; font-weight: bold; font-size: 20px;", "HGX"),
   id = "navbar",
   theme = shinytheme("united"),
-  windowTitle = "Titre fenêtre navigateur",
+  windowTitle = "HGX - Analyseur de séquences",
 
-  # Ajouter les styles pour l'affichage côte à côte et les tooltips
+  # ==============================================================================
+  # STYLES CSS ET JAVASCRIPT
+  # ==============================================================================
   header = tags$head(
     tags$style(HTML("
+      /* ===== LAYOUT PRINCIPAL ===== */
       .results-container {
         display: flex;
         gap: 20px;
         align-items: flex-start;
       }
 
+      /* ===== CONTENEUR DE LÉGENDE ===== */
       .legend-container {
         flex: 0 0 300px;
         background: #f8f9fa;
@@ -30,6 +40,7 @@ ui_clonage <- shinyUI(navbarPage(
         top: 20px;
       }
 
+      /* ===== CONTENEUR D'ALIGNEMENTS ===== */
       .alignments-container {
         flex: 1;
         background: #f8f8f8;
@@ -42,6 +53,7 @@ ui_clonage <- shinyUI(navbarPage(
         line-height: 1.4;
       }
 
+      /* ===== BLOCS D'ALIGNEMENT ===== */
       .alignment-block {
         margin-bottom: 25px;
         padding: 15px;
@@ -64,7 +76,7 @@ ui_clonage <- shinyUI(navbarPage(
         white-space: normal;
       }
 
-      /* Styles pour les champs de recherche */
+      /* ===== INTERFACE DE RECHERCHE ===== */
       .search-container {
         background: #f8f9fa;
         padding: 15px;
@@ -83,7 +95,7 @@ ui_clonage <- shinyUI(navbarPage(
         border-left: 4px solid #4caf50;
       }
 
-      /* Animation pour le spinner */
+      /* ===== ANIMATIONS ===== */
       @keyframes spin {
         0% { transform: rotate(0deg); }
         100% { transform: rotate(360deg); }
@@ -99,7 +111,7 @@ ui_clonage <- shinyUI(navbarPage(
         100% { background-color: #f0f0f0; }
       }
 
-      /* Styles pour les tooltips */
+      /* ===== TOOLTIPS POUR NUCLÉOTIDES ===== */
       .nucleotide-cell {
         position: relative;
         cursor: pointer;
@@ -150,8 +162,11 @@ ui_clonage <- shinyUI(navbarPage(
       }
     ")),
 
-    # JavaScript pour la fonctionnalité de copie et gestion recherche
+    # ==============================================================================
+    # JAVASCRIPT POUR INTERACTIONS
+    # ==============================================================================
     tags$script(HTML("
+      // Fonction de copie dans le presse-papiers
       function copyToClipboard() {
         const alignResults = document.querySelector('.alignments-container');
         if (!alignResults) return;
@@ -167,7 +182,7 @@ ui_clonage <- shinyUI(navbarPage(
         }
       }
 
-      // Gestion de l'affichage du bouton stop
+      // Gestion de l'interface de recherche
       $(document).on('click', '#search_seq_btn', function() {
         $('.stop-search-btn').show();
         $(this).prop('disabled', true);
@@ -179,7 +194,7 @@ ui_clonage <- shinyUI(navbarPage(
         Shiny.setInputValue('stop_search', Math.random());
       });
 
-      // Réactiver le bouton de recherche et cacher le bouton stop quand la recherche est terminée
+      // Réactivation automatique du bouton de recherche
       $(document).on('shiny:value', function(event) {
         if (event.name === 'search_in_progress' && event.value === false) {
           $('.stop-search-btn').hide();
@@ -189,40 +204,55 @@ ui_clonage <- shinyUI(navbarPage(
     "))
   ),
 
+  # ==============================================================================
+  # ONGLET PRINCIPAL - CLONAGES HORS BASE
+  # ==============================================================================
   tabPanel("Clonages Hors Base",
 
-           # Interface simple et entièrement adaptative
            div(style = "width: 100%; margin: 20px auto; padding: 20px;",
 
-               # Fichiers d'entrée
+               # ==============================================================================
+               # SECTION FICHIERS D'ENTRÉE
+               # ==============================================================================
                wellPanel(
                  h4("📁 Fichiers d'entrée", style = "color: #b22222; margin-top: 0;"),
 
-                 # Carte GenBank (inchangé)
+                 # Sélection de la carte GenBank de référence
                  fluidRow(
                    column(12,
-                          actionButton("refresh_files", "🔄", style = "float: right; margin-bottom: 5px; background: transparent; border: 1px solid #ccc;"),
-                          selectInput("carte_xdna", "Carte de référence (.gb):", choices = NULL)
+                          actionButton("refresh_files", "🔄",
+                                       style = "float: right; margin-bottom: 5px; background: transparent; border: 1px solid #ccc;",
+                                       title = "Rafraîchir la liste des fichiers GenBank"),
+                          selectInput("carte_xdna",
+                                      "Carte de référence (.gb):",
+                                      choices = NULL,
+                                      width = "100%")
                    )
                  ),
 
-                 # Nouvelle section de recherche pour les fichiers .seq
+                 # Interface de recherche de fichiers .seq
                  div(class = "search-container",
                      h5("🔍 Recherche de fichiers .seq", style = "color: #b22222; margin-top: 0; margin-bottom: 15px;"),
+
+                     # Champs de recherche
                      fluidRow(
                        column(6,
                               textInput("plate_keyword",
                                         label = "Nom de plaque (ex: AU83940):",
                                         value = "",
-                                        placeholder = "Tapez le nom de la plaque...")
+                                        placeholder = "Tapez le nom de la plaque...",
+                                        width = "100%")
                        ),
                        column(6,
                               textInput("seq_keyword",
                                         label = "Mot-clé pour fichiers .seq:",
                                         value = "",
-                                        placeholder = "Tapez le mot-clé...")
+                                        placeholder = "Tapez le mot-clé...",
+                                        width = "100%")
                        )
                      ),
+
+                     # Boutons d'action
                      fluidRow(
                        column(8,
                               actionButton("search_seq_btn", "🔍 Rechercher",
@@ -244,48 +274,66 @@ ui_clonage <- shinyUI(navbarPage(
                      )
                  ),
 
-                 # Sélection finale des fichiers .seq
+                 # Sélection finale des fichiers .seq trouvés
                  conditionalPanel(
                    condition = "output.seq_files_found",
-                   selectInput("seq_files", "Fichiers .seq trouvés:",
-                               choices = NULL, multiple = TRUE)
+                   selectInput("seq_files",
+                               "Fichiers .seq trouvés:",
+                               choices = NULL,
+                               multiple = TRUE,
+                               width = "100%")
                  )
                ),
 
-               # Enzymes de restriction (inchangé)
+               # ==============================================================================
+               # SECTION ENZYMES DE RESTRICTION
+               # ==============================================================================
                wellPanel(
                  h4("🧬 Enzymes de restriction", style = "color: #b22222; margin-top: 0;"),
+
                  fluidRow(
                    column(6,
-                          selectInput("enzyme1", "Enzyme 1:",
+                          selectInput("enzyme1",
+                                      "Enzyme 1:",
                                       choices = c("Aucune" = "", names(get_restriction_enzymes())),
-                                      selected = "")
+                                      selected = "",
+                                      width = "100%")
                    ),
                    column(6,
-                          selectInput("enzyme2", "Enzyme 2:",
+                          selectInput("enzyme2",
+                                      "Enzyme 2:",
                                       choices = c("Aucune" = "", names(get_restriction_enzymes())),
-                                      selected = "")
+                                      selected = "",
+                                      width = "100%")
                    )
                  ),
+
+                 # Affichage des informations sur les sites trouvés
                  div(style = "background: #e8f4f8; padding: 8px; border-radius: 4px; margin-top: 10px; font-family: monospace; font-size: 12px;",
                      textOutput("restriction_info")
                  )
                ),
 
-               # Bouton d'alignement (inchangé)
+               # ==============================================================================
+               # BOUTON D'ALIGNEMENT PRINCIPAL
+               # ==============================================================================
                div(style = "text-align: center; margin: 20px 0;",
                    actionButton("align_btn", "🔬 Lancer l'alignement",
                                 style = "background-color: #b22222; color: white; font-size: 16px; padding: 12px 30px; border: none; border-radius: 5px; font-weight: bold;")
                ),
 
-               # Informations (inchangé)
+               # ==============================================================================
+               # SECTION INFORMATIONS
+               # ==============================================================================
                wellPanel(
                  h4("📊 Informations", style = "color: #b22222; margin-top: 0;"),
                  verbatimTextOutput("seq_xdna"),
                  verbatimTextOutput("seqs_selected")
                ),
 
-               # Instructions pour les tooltips (inchangé)
+               # ==============================================================================
+               # INSTRUCTIONS UTILISATEUR
+               # ==============================================================================
                conditionalPanel(
                  condition = "output.align_results",
                  div(style = "background: #e8f5e8; padding: 10px; border-radius: 4px; margin: 10px 0; border-left: 4px solid #4caf50;",
@@ -294,23 +342,34 @@ ui_clonage <- shinyUI(navbarPage(
                  )
                ),
 
-               # Boutons d'export (inchangé)
+               # ==============================================================================
+               # BOUTONS D'EXPORT
+               # ==============================================================================
                conditionalPanel(
                  condition = "output.align_results",
                  div(style = "margin: 20px 0; text-align: center;",
-                     tags$button("📋 Copier", onclick = "copyToClipboard()",
+                     tags$button("📋 Copier",
+                                 onclick = "copyToClipboard()",
                                  style = "background: #27ae60; color: white; border: none; padding: 8px 15px; margin-right: 10px; border-radius: 4px;"),
                      downloadButton("download_txt", "💾 Télécharger TXT",
                                     style = "background: #2c3e50; color: white; border: none; padding: 8px 15px; border-radius: 4px;")
                  )
                ),
 
-               # Résultats d'alignement (inchangé)
+               # ==============================================================================
+               # ZONE D'AFFICHAGE DES RÉSULTATS D'ALIGNEMENT
+               # ==============================================================================
                uiOutput("align_results")
            )
   ),
 
+  # ==============================================================================
+  # ONGLET TEST (POUR DÉVELOPPEMENTS FUTURS)
+  # ==============================================================================
   tabPanel("TEST",
-           h4("Contenu ici...")
+           div(style = "padding: 20px;",
+               h4("Zone de test", style = "color: #b22222;"),
+               p("Cet onglet est réservé pour les développements futurs et les tests.")
+           )
   )
 ))
