@@ -64,6 +64,41 @@ ui_clonage <- shinyUI(navbarPage(
         white-space: normal;
       }
 
+      /* Styles pour les champs de recherche */
+      .search-container {
+        background: #f8f9fa;
+        padding: 15px;
+        border-radius: 5px;
+        border: 1px solid #dee2e6;
+        margin-bottom: 10px;
+      }
+
+      .search-result {
+        background: #e8f5e8;
+        padding: 8px;
+        border-radius: 4px;
+        margin-top: 10px;
+        font-family: monospace;
+        font-size: 12px;
+        border-left: 4px solid #4caf50;
+      }
+
+      /* Animation pour le spinner */
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+
+      .progress-container {
+        animation: pulse 2s infinite;
+      }
+
+      @keyframes pulse {
+        0% { background-color: #f0f0f0; }
+        50% { background-color: #e8f4f8; }
+        100% { background-color: #f0f0f0; }
+      }
+
       /* Styles pour les tooltips */
       .nucleotide-cell {
         position: relative;
@@ -115,7 +150,7 @@ ui_clonage <- shinyUI(navbarPage(
       }
     ")),
 
-    # JavaScript pour la fonctionnalité de copie
+    # JavaScript pour la fonctionnalité de copie et gestion recherche
     tags$script(HTML("
       function copyToClipboard() {
         const alignResults = document.querySelector('.alignments-container');
@@ -131,6 +166,26 @@ ui_clonage <- shinyUI(navbarPage(
           });
         }
       }
+
+      // Gestion de l'affichage du bouton stop
+      $(document).on('click', '#search_seq_btn', function() {
+        $('.stop-search-btn').show();
+        $(this).prop('disabled', true);
+      });
+
+      $(document).on('click', '#stop_search_btn', function() {
+        $('.stop-search-btn').hide();
+        $('#search_seq_btn').prop('disabled', false);
+        Shiny.setInputValue('stop_search', Math.random());
+      });
+
+      // Réactiver le bouton de recherche et cacher le bouton stop quand la recherche est terminée
+      $(document).on('shiny:value', function(event) {
+        if (event.name === 'search_in_progress' && event.value === false) {
+          $('.stop-search-btn').hide();
+          $('#search_seq_btn').prop('disabled', false);
+        }
+      });
     "))
   ),
 
@@ -142,18 +197,62 @@ ui_clonage <- shinyUI(navbarPage(
                # Fichiers d'entrée
                wellPanel(
                  h4("📁 Fichiers d'entrée", style = "color: #b22222; margin-top: 0;"),
+
+                 # Carte GenBank (inchangé)
                  fluidRow(
-                   column(6,
+                   column(12,
                           actionButton("refresh_files", "🔄", style = "float: right; margin-bottom: 5px; background: transparent; border: 1px solid #ccc;"),
                           selectInput("carte_xdna", "Carte de référence (.gb):", choices = NULL)
-                   ),
-                   column(6,
-                          selectInput("seq_files", "Séquences test (.seq):", choices = NULL, multiple = TRUE)
                    )
+                 ),
+
+                 # Nouvelle section de recherche pour les fichiers .seq
+                 div(class = "search-container",
+                     h5("🔍 Recherche de fichiers .seq", style = "color: #b22222; margin-top: 0; margin-bottom: 15px;"),
+                     fluidRow(
+                       column(6,
+                              textInput("plate_keyword",
+                                        label = "Nom de plaque (ex: AU83940):",
+                                        value = "",
+                                        placeholder = "Tapez le nom de la plaque...")
+                       ),
+                       column(6,
+                              textInput("seq_keyword",
+                                        label = "Mot-clé pour fichiers .seq:",
+                                        value = "",
+                                        placeholder = "Tapez le mot-clé...")
+                       )
+                     ),
+                     fluidRow(
+                       column(8,
+                              actionButton("search_seq_btn", "🔍 Rechercher",
+                                           style = "background-color: #17a2b8; color: white; border: none; padding: 8px 20px; border-radius: 4px; margin-top: 10px;")
+                       ),
+                       column(4,
+                              actionButton("stop_search_btn", "⏹️ Arrêter",
+                                           style = "background-color: #dc3545; color: white; border: none; padding: 8px 20px; border-radius: 4px; margin-top: 10px; display: none;",
+                                           class = "stop-search-btn")
+                       )
+                     ),
+
+                     # Affichage des résultats de recherche
+                     conditionalPanel(
+                       condition = "output.search_results",
+                       div(class = "search-result",
+                           htmlOutput("search_results")
+                       )
+                     )
+                 ),
+
+                 # Sélection finale des fichiers .seq
+                 conditionalPanel(
+                   condition = "output.seq_files_found",
+                   selectInput("seq_files", "Fichiers .seq trouvés:",
+                               choices = NULL, multiple = TRUE)
                  )
                ),
 
-               # Enzymes de restriction
+               # Enzymes de restriction (inchangé)
                wellPanel(
                  h4("🧬 Enzymes de restriction", style = "color: #b22222; margin-top: 0;"),
                  fluidRow(
@@ -173,20 +272,20 @@ ui_clonage <- shinyUI(navbarPage(
                  )
                ),
 
-               # Bouton d'alignement
+               # Bouton d'alignement (inchangé)
                div(style = "text-align: center; margin: 20px 0;",
                    actionButton("align_btn", "🔬 Lancer l'alignement",
                                 style = "background-color: #b22222; color: white; font-size: 16px; padding: 12px 30px; border: none; border-radius: 5px; font-weight: bold;")
                ),
 
-               # Informations
+               # Informations (inchangé)
                wellPanel(
                  h4("📊 Informations", style = "color: #b22222; margin-top: 0;"),
                  verbatimTextOutput("seq_xdna"),
                  verbatimTextOutput("seqs_selected")
                ),
 
-               # Instructions pour les tooltips
+               # Instructions pour les tooltips (inchangé)
                conditionalPanel(
                  condition = "output.align_results",
                  div(style = "background: #e8f5e8; padding: 10px; border-radius: 4px; margin: 10px 0; border-left: 4px solid #4caf50;",
@@ -195,7 +294,7 @@ ui_clonage <- shinyUI(navbarPage(
                  )
                ),
 
-               # Boutons d'export
+               # Boutons d'export (inchangé)
                conditionalPanel(
                  condition = "output.align_results",
                  div(style = "margin: 20px 0; text-align: center;",
@@ -206,7 +305,7 @@ ui_clonage <- shinyUI(navbarPage(
                  )
                ),
 
-               # Résultats d'alignement
+               # Résultats d'alignement (inchangé)
                uiOutput("align_results")
            )
   ),

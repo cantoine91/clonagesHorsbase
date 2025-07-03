@@ -8,6 +8,38 @@ clean_sequence <- function(sequence_text) {
   toupper(sequence_text)
 }
 
+# ==================== NOUVELLES FONCTIONS UTILITAIRES POUR LA RECHERCHE ====================
+
+# Fonction pour valider l'existence d'un répertoire
+validate_directory <- function(path) {
+  return(dir.exists(path))
+}
+
+# Fonction pour nettoyer et valider les mots-clés de recherche
+clean_search_keyword <- function(keyword) {
+  if (is.null(keyword)) return("")
+  # Supprimer les espaces de début/fin et les caractères spéciaux problématiques
+  keyword <- trimws(keyword)
+  # Échapper les caractères spéciaux pour regex (optionnel)
+  return(keyword)
+}
+
+# Fonction pour formater l'affichage des résultats de recherche
+format_search_results <- function(folders, files) {
+  if (length(folders) == 0) {
+    return("Aucun résultat trouvé")
+  }
+
+  result <- paste("Dossiers trouvés:", length(folders), "\n")
+  if (length(files) > 0) {
+    result <- paste0(result, "Fichiers .seq trouvés:", length(files))
+  } else {
+    result <- paste0(result, "Aucun fichier .seq correspondant")
+  }
+
+  return(result)
+}
+
 # ==================== FONCTIONS SITES DE RESTRICTION ====================
 
 # Base de données des enzymes de restriction communes
