@@ -52,6 +52,49 @@ format_search_results <- function(folders, files) {
   return(result)
 }
 
+#' Calcul de la région d'affichage basée sur les sites de restriction
+#' @param restriction_sites_list Liste des sites de restriction
+#' @param sequence_length Longueur totale de la séquence
+#' @param context_length Nombre de nucléotides de contexte (défaut: 200)
+#' @return Liste avec start et end de la région à afficher
+calculate_restriction_display_region <- function(restriction_sites_list, sequence_length, context_length = 200) {
+  if (length(restriction_sites_list) == 0) {
+    return(list(start = 1, end = sequence_length))
+  }
+
+  # Collecter tous les sites de restriction
+  all_sites <- c()
+  for (enzyme_name in names(restriction_sites_list)) {
+    sites <- restriction_sites_list[[enzyme_name]]
+    if (length(sites) > 0) {
+      all_sites <- c(all_sites, sites)
+    }
+  }
+
+  if (length(all_sites) == 0) {
+    return(list(start = 1, end = sequence_length))
+  }
+
+  # Trier les sites
+  all_sites <- sort(all_sites)
+
+  if (length(all_sites) == 1) {
+    # Un seul site : centrer autour de ce site
+    center <- all_sites[1]
+    start_pos <- max(1, center - context_length)
+    end_pos <- min(sequence_length, center + context_length)
+  } else {
+    # Plusieurs sites : du premier au dernier avec contexte
+    first_site <- all_sites[1]
+    last_site <- all_sites[length(all_sites)]
+
+    start_pos <- max(1, first_site - context_length)
+    end_pos <- min(sequence_length, last_site + context_length)
+  }
+
+  return(list(start = start_pos, end = end_pos))
+}
+
 # ==============================================================================
 # ENZYMES DE RESTRICTION
 # ==============================================================================
@@ -137,13 +180,15 @@ build_restriction_position_map <- function(sequence_length, restriction_sites, a
         site_length <- nchar(enzymes[[enzyme_name]])
 
         for (site_pos in sites) {
+          # Calcul des positions relatives à la fenêtre d'affichage
           for (i in 0:(site_length - 1)) {
-            pos <- site_pos + i
-            if (pos >= alignment_start && pos <= (alignment_start + sequence_length - 1)) {
-              map_pos <- pos - alignment_start + 1
-              if (map_pos > 0 && map_pos <= sequence_length) {
-                is_restriction[map_pos] <- TRUE
-              }
+            global_pos <- site_pos + i
+            # Position relative dans la fenêtre d'affichage
+            relative_pos <- global_pos - alignment_start + 1
+
+            # Vérifier que la position est dans la fenêtre
+            if (relative_pos > 0 && relative_pos <= sequence_length) {
+              is_restriction[relative_pos] <- TRUE
             }
           }
         }

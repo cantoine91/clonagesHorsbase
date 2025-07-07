@@ -266,6 +266,51 @@ server_clonage <- function(input, output, session) {
     })
   })
 
+  # Observer pour la sélection automatique des fichiers .seq
+  observeEvent(input$select_all_seq, {
+    if (input$select_all_seq && length(search_data$seq_files_paths) > 0) {
+      # Sélectionner tous les fichiers disponibles
+      updateSelectInput(session, "seq_files",
+                        selected = search_data$seq_files_paths)
+      showNotification("✅ Tous les fichiers .seq ont été sélectionnés",
+                       type = "message", duration = 3)
+    }
+  })
+
+  # Observer pour désélectionner la case quand l'utilisateur modifie manuellement la sélection
+  observeEvent(input$seq_files, {
+    if (!is.null(search_data$seq_files_paths) &&
+        length(search_data$seq_files_paths) > 0 &&
+        !is.null(input$seq_files)) {
+
+      # Si pas tous les fichiers sélectionnés, décocher la case automatique
+      if (length(input$seq_files) != length(search_data$seq_files_paths)) {
+        updateCheckboxInput(session, "select_all_seq", value = FALSE)
+      }
+    }
+  }, ignoreInit = TRUE)
+
+  # Mise à jour automatique quand de nouveaux fichiers sont trouvés
+  observe({
+    if (input$select_all_seq && length(search_data$seq_files_paths) > 0) {
+      updateSelectInput(session, "seq_files",
+                        selected = search_data$seq_files_paths)
+    }
+  })
+
+  # Observer pour la sélection automatique des fichiers .seq
+  observeEvent(input$select_all_seq, {
+    if (input$select_all_seq && length(search_data$seq_files_paths) > 0) {
+      # Sélectionner tous les fichiers disponibles
+      updateSelectInput(session, "seq_files",
+                        selected = search_data$seq_files_paths)
+      showNotification("✅ Tous les fichiers .seq ont été sélectionnés",
+                       type = "message", duration = 3)
+    }
+  })
+
+
+
   # ==============================================================================
   # OUTPUTS INTERFACE
   # ==============================================================================
@@ -478,8 +523,41 @@ server_clonage <- function(input, output, session) {
 
       incProgress(0.1, detail = "Préparation des données...")
 
+      # Calcul de la région d'affichage si demandé
+      display_region <- if (input$show_restriction_context) {
+        calculate_restriction_display_region(restriction_sites(), length(data_xdna$seq))
+      } else {
+        list(start = 1, end = length(data_xdna$seq))
+      }
+
       # Génération de la légende des couleurs
       legend_content <- generate_color_legend(data_xdna$features, restriction_sites())
+
+      # Ajout d'information sur la région affichée
+      if (input$show_restriction_context && length(restriction_sites()) > 0) {
+        region_info <- paste0(
+          "<div style='background: #e3f2fd; padding: 8px; border-radius: 4px; margin-bottom: 10px; font-size: 12px;'>",
+          "📍 <strong>Région affichée:</strong> ", display_region$start, " - ", display_region$end,
+          " (", display_region$end - display_region$start + 1, " nt)",
+          "<br>💡 Centrée sur les sites de restriction avec ±200nt de contexte",
+          "</div>"
+        )
+        legend_content <- paste0(region_info, legend_content)
+      } else if (input$show_restriction_context && length(restriction_sites()) == 0) {
+        region_info <- paste0(
+          "<div style='background: #fff3cd; padding: 8px; border-radius: 4px; margin-bottom: 10px; font-size: 12px;'>",
+          "ℹ️ <strong>Aucun site de restriction trouvé.</strong> Affichage de la séquence complète.",
+          "</div>"
+        )
+        legend_content <- paste0(region_info, legend_content)
+      } else {
+        region_info <- paste0(
+          "<div style='background: #f8f9fa; padding: 8px; border-radius: 4px; margin-bottom: 10px; font-size: 12px;'>",
+          "📍 <strong>Mode:</strong> Affichage de la séquence complète de référence",
+          "</div>"
+        )
+        legend_content <- paste0(region_info, legend_content)
+      }
 
       align_output <- character()
       text_output <- character()
@@ -508,14 +586,38 @@ server_clonage <- function(input, output, session) {
         sub_aligned <- as.character(subject(aln))
         annot_aligned <- annotate_sequence_mutations(pat_aligned, sub_aligned)
 
-        # Création des séquences complètes avec gaps
-        full_pattern <- create_full_pattern_with_gaps(pat_aligned, aln_start, length(data_xdna$seq))
-        full_subject <- as.character(data_xdna$seq)
-        full_annot <- create_full_annotation_with_spaces(annot_aligned, aln_start, length(data_xdna$seq))
+        # MODIFICATION : Utilisation de la région d'affichage
+        if (input$show_restriction_context && length(restriction_sites()) > 0) {
+          # Extraction de la sous-séquence dans la région d'intérêt
+          region_seq <- data_xdna$seq[display_region$start:display_region$end]
+          region_length <- length(region_seq)
 
-        # Préparation des cartes de couleurs et restrictions
-        colors <- build_sequence_color_map(data_xdna$features, 1, length(data_xdna$seq))
-        restriction_positions <- build_restriction_position_map(length(data_xdna$seq), restriction_sites())
+          # Ajustement des positions d'alignement relatives à la région
+          relative_start <- max(1, aln_start - display_region$start + 1)
+          relative_end <- min(region_length, aln_end - display_region$start + 1)
+
+          # Création des séquences avec gaps pour la région
+          full_pattern <- create_full_pattern_with_gaps(pat_aligned, relative_start, region_length)
+          full_subject <- as.character(region_seq)
+          full_annot <- create_full_annotation_with_spaces(annot_aligned, relative_start, region_length)
+
+          # Cartes de couleurs et restrictions pour la région
+          colors <- build_sequence_color_map(data_xdna$features, display_region$start, region_length)
+          restriction_positions <- build_restriction_position_map(region_length, restriction_sites(), display_region$start)
+
+          region_info_text <- paste0(" (région ", display_region$start, "-", display_region$end,
+                                     ", alignement: ", aln_start, "-", aln_end, ")")
+        } else {
+          # Mode normal : séquence complète
+          full_pattern <- create_full_pattern_with_gaps(pat_aligned, aln_start, length(data_xdna$seq))
+          full_subject <- as.character(data_xdna$seq)
+          full_annot <- create_full_annotation_with_spaces(annot_aligned, aln_start, length(data_xdna$seq))
+
+          colors <- build_sequence_color_map(data_xdna$features, 1, length(data_xdna$seq))
+          restriction_positions <- build_restriction_position_map(length(data_xdna$seq), restriction_sites())
+
+          region_info_text <- paste0(" (région alignée: ", aln_start, "-", aln_end, ")")
+        }
 
         # Nom d'affichage du fichier
         file_display_name <- if (!is.null(selected_files) && i <= length(selected_files)) {
@@ -526,8 +628,10 @@ server_clonage <- function(input, output, session) {
 
         # Génération de l'alignement coloré
         blast_alignment <- generate_colored_alignment(
-          full_pattern, full_subject, full_annot, aln_start, colors,
-          paste0(file_display_name, " (région alignée: ", aln_start, "-", aln_end, ")"),
+          full_pattern, full_subject, full_annot,
+          if (input$show_restriction_context && length(restriction_sites()) > 0) display_region$start else aln_start,
+          colors,
+          paste0(file_display_name, region_info_text),
           restriction_positions
         )
 

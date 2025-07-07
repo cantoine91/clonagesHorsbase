@@ -366,15 +366,20 @@ ui_clonage <- navbarPage(
                                "Fichiers .seq trouvés:",
                                choices = NULL,
                                multiple = TRUE,
-                               width = "100%")
+                               width = "100%"),
+                   div(style = "margin-top: 15px; padding: 10px; background: #f1f3f4; border-radius: 4px;",
+                       checkboxInput("select_all_seq",
+                                     label = "Sélectionner tous les fichiers .seq",
+                                     value = FALSE)
+                   )
                  )
                ),
 
                # ==============================================================================
-               # SECTION ENZYMES DE RESTRICTION
+               # SECTION SITES DE RESTRICTION
                # ==============================================================================
                wellPanel(
-                 h4("🧬 Enzymes de restriction", style = "color: #b22222; margin-top: 0;"),
+                 h4("🧬 Sites de restriction", style = "color: #b22222; margin-top: 0;"),
 
                  fluidRow(
                    column(6,
@@ -396,6 +401,30 @@ ui_clonage <- navbarPage(
                  # Affichage des informations sur les sites trouvés
                  div(style = "background: #e8f4f8; padding: 8px; border-radius: 4px; margin-top: 10px; font-family: monospace; font-size: 12px;",
                      textOutput("restriction_info")
+                 ),
+
+                 # NOUVEAU : Option d'affichage centré sur les sites de restriction
+                 div(style = "margin-top: 15px; padding: 10px; background: #f1f3f4; border-radius: 4px;",
+                     h5("⚙️ Options d'affichage", style = "color: #b22222; margin-top: 0; margin-bottom: 10px;"),
+
+                     checkboxInput("show_restriction_context",
+                                   label = "Centrer l'alignement sur les sites de restriction (±200nt)",
+                                   value = TRUE),
+
+                     # Message d'aide conditionnel
+                     conditionalPanel(
+                       condition = "input.show_restriction_context == true",
+                       div(style = "margin-top: 5px; padding: 5px; background: #e8f5e8; border-left: 3px solid #4caf50; font-size: 12px;",
+                           "💡 L'alignement sera centré sur la région entre les sites de restriction avec ±200nt de contexte.",
+                           br(),
+                           "Si aucun site n'est trouvé, la séquence complète sera affichée.")
+                     ),
+
+                     conditionalPanel(
+                       condition = "input.show_restriction_context == false",
+                       div(style = "margin-top: 5px; padding: 5px; background: #fff3cd; border-left: 3px solid #ffc107; font-size: 12px;",
+                           "ℹ️ L'alignement affichera la séquence complète de référence.")
+                     )
                  )
                ),
 
