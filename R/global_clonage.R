@@ -103,36 +103,41 @@ calculate_restriction_display_region <- function(restriction_sites_list, sequenc
 #' @return Liste nommée des séquences de reconnaissance des enzymes
 get_restriction_enzymes <- function() {
   return(list(
-    "EcoRI" = "GAATTC",
-    "BamHI" = "GGATCC",
-    "HindIII" = "AAGCTT",
-    "XhoI" = "CTCGAG",
-    "SalI" = "GTCGAC",
-    "NotI" = "GCGGCCGC",
-    "XbaI" = "TCTAGA",
-    "SpeI" = "ACTAGT",
-    "KpnI" = "GGTACC",
-    "SacI" = "GAGCTC",
-    "BglII" = "AGATCT",
-    "PstI" = "CTGCAG",
-    "SmaI" = "CCCGGG",
-    "ApaI" = "GGGCCC",
-    "ClaI" = "ATCGAT",
-    "NdeI" = "CATATG",
-    "NcoI" = "CCATGG",
-    "BspEI" = "TCCGGA",
     "AflII" = "CTTAAG",
-    "MluI" = "ACGCGT",
+    "ApaI" = "GGGCCC",
     "AscI" = "GGCGCGCC",
-    "PacI" = "TTAATTAA",
-    "SbfI" = "CCTGCAGG",
     "AvrII" = "CCTAGG",
-    "NheI" = "GCTAGC",
+    "BamHI" = "GGATCC",
+    "BglII" = "AGATCT",
+    "BspEI" = "TCCGGA",
     "BssHII" = "GCGCGC",
-    "PmeI" = "GTTTAAAC",
-    "SrfI" = "GCCCGGGC",
+    "ClaI" = "ATCGAT",
+    "EcoRI" = "GAATTC",
+    "HindIII" = "AAGCTT",
     "HpaI" = "GTTAAC",
-    "ScaI" = "AGTACT"
+    "KpnI" = "GGTACC",
+    "MluI" = "ACGCGT",
+    "NcoI" = "CCATGG",
+    "NdeI" = "CATATG",
+    "NheI" = "GCTAGC",
+    "NotI" = "GCGGCCGC",
+    "PacI" = "TTAATTAA",
+    "PmeI" = "GTTTAAAC",
+    "PstI" = "CTGCAG",
+    "SacI" = "GAGCTC",
+    "SacII" = "CCGCGG",
+    "SalI" = "GTCGAC",
+    "SbfI" = "CCTGCAGG",
+    "ScaI" = "AGTACT",
+    "SfiI" = "GGCC.....GGCC", # Pattern spécial pour SfiI
+    "SmaI" = "CCCGGG",
+    "SpeI" = "ACTAGT",
+    "SrfI" = "GCCCGGGC",
+    "StuI" = "AGGCCT",
+    "SwaI" = "ATTTAAAT",
+    "XbaI" = "TCTAGA",
+    "XhoI" = "CTCGAG",
+    "XmaI" = "CCCGGG"
   ))
 }
 
@@ -153,7 +158,19 @@ find_restriction_sites <- function(sequence, enzyme_sequence) {
   sequence <- toupper(sequence)
   enzyme_sequence <- toupper(enzyme_sequence)
 
-  # Recherche de toutes les occurrences
+  # Gestion spéciale pour SfiI
+  if (enzyme_sequence == "GGCC.....GGCC") {
+    # Pattern regex pour SfiI : GGCC suivi de 5 n'importe quels nucléotides puis GGCC
+    pattern <- "GGCC[ATCG]{5}GGCC"
+    matches <- gregexpr(pattern, sequence, perl = TRUE)[[1]]
+
+    if (matches[1] == -1) {
+      return(integer(0))
+    }
+    return(as.integer(matches))
+  }
+
+  # Recherche normale pour les autres enzymes
   matches <- gregexpr(enzyme_sequence, sequence, fixed = TRUE)[[1]]
 
   if (matches[1] == -1) {
@@ -162,6 +179,7 @@ find_restriction_sites <- function(sequence, enzyme_sequence) {
 
   return(as.integer(matches))
 }
+
 
 #' Construction d'une carte des positions de sites de restriction
 #' @param sequence_length Longueur de la séquence
@@ -177,7 +195,13 @@ build_restriction_position_map <- function(sequence_length, restriction_sites, a
     for (enzyme_name in names(restriction_sites)) {
       sites <- restriction_sites[[enzyme_name]]
       if (length(sites) > 0) {
-        site_length <- nchar(enzymes[[enzyme_name]])
+
+        # Gestion spéciale pour SfiI (site de 13 bp)
+        if (enzyme_name == "SfiI") {
+          site_length <- 13  # GGCC + 5 nucléotides + GGCC
+        } else {
+          site_length <- nchar(enzymes[[enzyme_name]])
+        }
 
         for (site_pos in sites) {
           # Calcul des positions relatives à la fenêtre d'affichage
@@ -199,7 +223,8 @@ build_restriction_position_map <- function(sequence_length, restriction_sites, a
   return(is_restriction)
 }
 
-#' Génération de la légende HTML pour les sites de restriction
+
+#' Génération de la légende HTML pour les sites de restriction (mise à jour)
 #' @param restriction_sites_list Liste des sites de restriction
 #' @return HTML formaté pour la légende des sites de restriction
 generate_restriction_legend_formatted <- function(restriction_sites_list) {
@@ -218,11 +243,18 @@ generate_restriction_legend_formatted <- function(restriction_sites_list) {
       enzymes <- get_restriction_enzymes()
       enzyme_seq <- enzymes[[enzyme_name]]
 
+      # Affichage spécial pour SfiI
+      if (enzyme_name == "SfiI") {
+        enzyme_display <- "GGCCNNNNNGGCC"
+      } else {
+        enzyme_display <- enzyme_seq
+      }
+
       sites_text <- paste(sites, collapse = ", ")
       legend_items <- c(legend_items,
                         paste0("<div style='margin-bottom: 5px;'><span style='color:", color,
                                "; font-weight: bold; font-size: 16px;'>■</span> ",
-                               "<span style='font-size: 12px;'>", enzyme_name, " (", enzyme_seq,
+                               "<span style='font-size: 12px;'>", enzyme_name, " (", enzyme_display,
                                ") - Sites: ", sites_text, "</span></div>"))
       site_index <- site_index + 1
     }
