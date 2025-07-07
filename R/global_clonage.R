@@ -1,7 +1,7 @@
 # ==============================================================================
 # GLOBAL_CLONAGE.R
 # Fonctions utilitaires pour l'analyse de séquences et l'alignement
-# Application Shiny HGX - Module Clonage
+# Application Shiny HGX - Module Clonage - VERSION CORRIGÉE ESPACEMENT
 # ==============================================================================
 
 library(Biostrings)
@@ -562,17 +562,26 @@ generate_colored_alignment <- function(pattern_seq, subject_seq, annotation_seq,
     pattern_segment <- substr(pattern_seq, start, end)
     annotation_segment <- substr(annotation_seq, start, end)
 
-    # Calcul des positions d'affichage
+    # Calcul des positions d'affichage pour le sujet (séquence de référence)
     subject_start <- start
     subject_end <- end
 
-    pattern_bases_before <- nchar(gsub("-", "", substr(pattern_seq, 1, start - 1)))
-    pattern_bases_in_segment <- nchar(gsub("-", "", pattern_segment))
-    pattern_start <- pattern_bases_before + 1
-    pattern_end <- pattern_bases_before + pattern_bases_in_segment
+    # CORRECTION: Calcul correct des positions pour le pattern
+    # Compter les nucléotides réels (non-gap) avant ce segment
+    pattern_before_segment <- substr(pattern_seq, 1, start - 1)
+    pattern_bases_before <- nchar(gsub("-", "", pattern_before_segment))
 
+    # Compter les nucléotides réels dans ce segment
+    pattern_bases_in_segment <- nchar(gsub("-", "", pattern_segment))
+
+    # Calculer les positions de début et fin
     if (pattern_bases_in_segment == 0) {
+      # Segment entièrement composé de gaps
+      pattern_start <- pattern_bases_before
       pattern_end <- pattern_bases_before
+    } else {
+      pattern_start <- pattern_bases_before + 1
+      pattern_end <- pattern_bases_before + pattern_bases_in_segment
     }
 
     # Extraction des couleurs et restrictions pour ce segment
@@ -597,7 +606,7 @@ generate_colored_alignment <- function(pattern_seq, subject_seq, annotation_seq,
 
     html_lines <- c(html_lines, alignment_table)
 
-    # Version texte
+    # Version texte - CORRECTION ESPACEMENT
     text_lines <- c(text_lines, "")
     text_lines <- c(text_lines, sprintf("Seq_1 %6d %s %d", subject_start, subject_segment, subject_end))
     text_lines <- c(text_lines, sprintf("       %s", annotation_segment))
@@ -634,7 +643,7 @@ create_colored_alignment_table <- function(subject_segment, pattern_segment, ann
   # Styles de base
   base_cell_style <- "font-family: Courier New, monospace; text-align: center; padding: 0; margin: 0; border: 0; width: 1ch; min-width: 1ch; max-width: 1ch;"
   prefix_style <- "font-family: Courier New, monospace; padding: 0; margin: 0; text-align: left; width: 100px; min-width: 100px; max-width: 100px; white-space: nowrap;"
-  suffix_style <- "font-family: Courier New, monospace; padding: 0; margin: 0; text-align: left; width: 60px; min-width: 60px; max-width: 60px;"
+  suffix_style <- "font-family: Courier New, monospace; padding: 0 0 0 8px; margin: 0; text-align: left; width: 60px; min-width: 60px; max-width: 60px;"
   table_style <- "border-collapse: collapse; margin: 10px 0; font-family: Courier New, monospace;"
 
   # Création des cellules
@@ -643,13 +652,13 @@ create_colored_alignment_table <- function(subject_segment, pattern_segment, ann
   annotation_cells <- create_sequence_cells(annotation_chars, base_cell_style, 1, "annotation")
   pattern_cells <- create_sequence_cells(pattern_chars, base_cell_style, pattern_start, "pattern")
 
-  # Assemblage du tableau HTML
+  # Assemblage du tableau HTML - CORRECTION ESPACEMENT FORCÉ
   table_html <- paste0(
     '<table style="', table_style, '">',
     "<tr>",
     '<td style="', prefix_style, '">Seq_1 ', sprintf("%6d", subject_start), " </td>",
     paste(subject_cells, collapse = ""),
-    '<td style="', suffix_style, '"> ', subject_end, "</td>",
+    '<td style="', suffix_style, '">&nbsp;', subject_end, "</td>",
     "</tr>",
     "<tr>",
     '<td style="', prefix_style, '"></td>',
@@ -659,7 +668,7 @@ create_colored_alignment_table <- function(subject_segment, pattern_segment, ann
     "<tr>",
     '<td style="', prefix_style, '">Seq_2 ', sprintf("%6d", pattern_start), " </td>",
     paste(pattern_cells, collapse = ""),
-    '<td style="', suffix_style, '"> ', pattern_end, "</td>",
+    '<td style="', suffix_style, '">&nbsp;', pattern_end, "</td>",
     "</tr>",
     "</table>"
   )
@@ -725,12 +734,26 @@ create_sequence_cells <- function(sequence_chars, base_style, start_position = 1
 
     # Gestion spécifique pour les séquences pattern
     if (sequence_type == "pattern") {
-      # Calcul de position en excluant les gaps
-      chars_before <- sequence_chars[1:(i-1)]
-      non_gap_before <- sum(chars_before != "-")
-      real_position <- start_position + non_gap_before
+      # Calcul de position en excluant les gaps - CORRECTION ICI
+      if (i == 1) {
+        # Pour le premier caractère, utiliser start_position seulement si ce n'est pas un gap
+        if (sequence_chars[i] == "-") {
+          real_position <- NA  # Pas de position pour un gap initial
+        } else {
+          real_position <- start_position
+        }
+      } else {
+        # Pour les autres caractères, compter les non-gaps précédents
+        chars_before <- sequence_chars[1:(i-1)]
+        non_gap_before <- sum(chars_before != "-")
+        if (sequence_chars[i] == "-") {
+          real_position <- NA  # Pas de position pour un gap
+        } else {
+          real_position <- start_position + non_gap_before
+        }
+      }
 
-      if (sequence_chars[i] == "-") {
+      if (is.na(real_position) || sequence_chars[i] == "-") {
         tooltip_text <- "Gap (insertion dans la référence)"
       } else {
         tooltip_text <- paste0("Position: ", real_position, " | Nucléotide: ", sequence_chars[i], " (Séquence test)")

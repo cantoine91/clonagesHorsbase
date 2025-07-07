@@ -2,12 +2,13 @@
 # UI_CLONAGE.R
 # Interface utilisateur pour l'application Shiny HGX - Module Clonage
 # Interface de recherche et alignement de séquences ADN
+# VERSION MISE À JOUR - BOUTON HTML SEULEMENT
 # ==============================================================================
 
 library(shiny)
 library(shinythemes)
 
-ui_clonage <- shinyUI(navbarPage(
+ui_clonage <- navbarPage(
   title = div(style = "color: white; font-weight: bold; font-size: 20px;", "HGX"),
   id = "navbar",
   theme = shinytheme("united"),
@@ -95,6 +96,89 @@ ui_clonage <- shinyUI(navbarPage(
         border-left: 4px solid #4caf50;
       }
 
+      /* ===== INDICATEUR DE PROGRESSION POUR ALIGNEMENT ===== */
+      .alignment-progress {
+        background: #e3f2fd;
+        border: 2px solid #2196f3;
+        border-radius: 8px;
+        padding: 20px;
+        margin: 20px 0;
+        text-align: center;
+        animation: pulse-blue 2s infinite;
+      }
+
+      @keyframes pulse-blue {
+        0% { background-color: #e3f2fd; border-color: #2196f3; }
+        50% { background-color: #bbdefb; border-color: #1976d2; }
+        100% { background-color: #e3f2fd; border-color: #2196f3; }
+      }
+
+      .alignment-spinner {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border: 3px solid #f3f3f3;
+        border-top: 3px solid #2196f3;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-right: 10px;
+      }
+
+      /* ===== RÉDUCTION HAUTEUR ZONE INFORMATIONS ===== */
+      .info-section {
+        max-height: 250px;
+        overflow-y: auto;
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        padding: 10px;
+        font-family: 'Courier New', monospace;
+        font-size: 10px;
+        line-height: 1.2;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+
+      .info-section::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      .info-section::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 4px;
+      }
+
+      .info-section::-webkit-scrollbar-thumb {
+        background: #c1c1c1;
+        border-radius: 4px;
+      }
+
+      .info-section::-webkit-scrollbar-thumb:hover {
+        background: #a8a8a8;
+      }
+
+      /* ===== STYLE POUR BOUTON ALIGNEMENT ACTIF ===== */
+      .align-btn-processing {
+        background-color: #ff9800 !important;
+        animation: pulse-orange 2s infinite;
+        pointer-events: none;
+      }
+
+      @keyframes pulse-orange {
+        0% { background-color: #ff9800; }
+        50% { background-color: #f57c00; }
+        100% { background-color: #ff9800; }
+      }
+
+      /* ===== BOUTONS D'ACTION CÔTE À CÔTE ===== */
+      .action-buttons {
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+        align-items: center;
+        margin: 20px 0;
+      }
+
       /* ===== ANIMATIONS ===== */
       @keyframes spin {
         0% { transform: rotate(0deg); }
@@ -166,22 +250,6 @@ ui_clonage <- shinyUI(navbarPage(
     # JAVASCRIPT POUR INTERACTIONS
     # ==============================================================================
     tags$script(HTML("
-      // Fonction de copie dans le presse-papiers
-      function copyToClipboard() {
-        const alignResults = document.querySelector('.alignments-container');
-        if (!alignResults) return;
-
-        const textContent = alignResults.innerText || alignResults.textContent;
-
-        if (navigator.clipboard && window.isSecureContext) {
-          navigator.clipboard.writeText(textContent).then(function() {
-            alert('Alignement copié dans le presse-papiers !');
-          }).catch(function(err) {
-            console.error('Erreur lors de la copie: ', err);
-          });
-        }
-      }
-
       // Gestion de l'interface de recherche
       $(document).on('click', '#search_seq_btn', function() {
         $('.stop-search-btn').show();
@@ -201,6 +269,24 @@ ui_clonage <- shinyUI(navbarPage(
           $('#search_seq_btn').prop('disabled', false);
         }
       });
+
+      // Gestion de l'état du bouton d'alignement
+      $(document).on('click', '#align_btn', function() {
+        $(this).addClass('align-btn-processing');
+        $(this).html('<span class=\"alignment-spinner\"></span>⏳ Alignement en cours...');
+        $(this).prop('disabled', true);
+      });
+
+      // Réactivation automatique du bouton après alignement
+      $(document).on('shiny:value', function(event) {
+        if (event.name === 'alignment_complete' && event.value === true) {
+          setTimeout(function() {
+            $('#align_btn').removeClass('align-btn-processing');
+            $('#align_btn').html('🔬 Lancer l\\'alignement');
+            $('#align_btn').prop('disabled', false);
+          }, 1000);
+        }
+      });
     "))
   ),
 
@@ -208,7 +294,6 @@ ui_clonage <- shinyUI(navbarPage(
   # ONGLET PRINCIPAL - CLONAGES HORS BASE
   # ==============================================================================
   tabPanel("Clonages Hors Base",
-
            div(style = "width: 100%; margin: 20px auto; padding: 20px;",
 
                # ==============================================================================
@@ -315,20 +400,51 @@ ui_clonage <- shinyUI(navbarPage(
                ),
 
                # ==============================================================================
-               # BOUTON D'ALIGNEMENT PRINCIPAL
+               # BOUTONS D'ACTION PRINCIPAUX
                # ==============================================================================
-               div(style = "text-align: center; margin: 20px 0;",
+               div(class = "action-buttons",
                    actionButton("align_btn", "🔬 Lancer l'alignement",
-                                style = "background-color: #b22222; color: white; font-size: 16px; padding: 12px 30px; border: none; border-radius: 5px; font-weight: bold;")
+                                style = "background-color: #b22222; color: white; font-size: 16px; padding: 12px 30px; border: none; border-radius: 5px; font-weight: bold;"),
+
+                   # Bouton d'export HTML conditionnel
+                   conditionalPanel(
+                     condition = "output.align_results",
+                     downloadButton("download_html", "🌐 Télécharger HTML",
+                                    style = "background-color: #e74c3c; color: white; border: none; padding: 12px 20px; border-radius: 5px; font-size: 14px;",
+                                    title = "Télécharger le rapport complet en HTML")
+                   )
                ),
 
                # ==============================================================================
-               # SECTION INFORMATIONS
+               # INDICATEUR DE PROGRESSION ALIGNEMENT
+               # ==============================================================================
+               conditionalPanel(
+                 condition = "output.alignment_in_progress",
+                 div(class = "alignment-progress",
+                     div(class = "alignment-spinner"),
+                     tags$strong("Alignement en cours..."),
+                     br(),
+                     tags$small("Analyse des séquences et génération des résultats colorés")
+                 )
+               ),
+
+               # ==============================================================================
+               # SECTION INFORMATIONS (VERSION COMPACTE)
                # ==============================================================================
                wellPanel(
-                 h4("📊 Informations", style = "color: #b22222; margin-top: 0;"),
-                 verbatimTextOutput("seq_xdna"),
-                 verbatimTextOutput("seqs_selected")
+                 h4("📊 Informations", style = "color: #b22222; margin-top: 0; margin-bottom: 10px;"),
+
+                 # Zone d'affichage compacte avec scroll
+                 div(class = "info-section",
+                     verbatimTextOutput("seq_xdna_compact"),
+                     verbatimTextOutput("seqs_selected_compact")
+                 ),
+
+                 # Indicateur de statut
+                 div(id = "status-indicator",
+                     style = "margin-top: 10px; padding: 5px; text-align: center; font-size: 12px;",
+                     uiOutput("processing_status")
+                 )
                ),
 
                # ==============================================================================
@@ -339,20 +455,6 @@ ui_clonage <- shinyUI(navbarPage(
                  div(style = "background: #e8f5e8; padding: 10px; border-radius: 4px; margin: 10px 0; border-left: 4px solid #4caf50;",
                      tags$p(style = "margin: 0; font-size: 13px; color: #2e7d32;",
                             "💡 ", tags$strong("Astuce:"), " Survolez les nucléotides dans l'alignement pour voir leur position exacte dans la séquence !")
-                 )
-               ),
-
-               # ==============================================================================
-               # BOUTONS D'EXPORT
-               # ==============================================================================
-               conditionalPanel(
-                 condition = "output.align_results",
-                 div(style = "margin: 20px 0; text-align: center;",
-                     tags$button("📋 Copier",
-                                 onclick = "copyToClipboard()",
-                                 style = "background: #27ae60; color: white; border: none; padding: 8px 15px; margin-right: 10px; border-radius: 4px;"),
-                     downloadButton("download_txt", "💾 Télécharger TXT",
-                                    style = "background: #2c3e50; color: white; border: none; padding: 8px 15px; border-radius: 4px;")
                  )
                ),
 
@@ -372,4 +474,4 @@ ui_clonage <- shinyUI(navbarPage(
                p("Cet onglet est réservé pour les développements futurs et les tests.")
            )
   )
-))
+)

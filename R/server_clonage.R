@@ -1,7 +1,7 @@
 # ==============================================================================
 # SERVER_CLONAGE.R
 # Logique serveur pour l'application Shiny HGX - Module Clonage
-# Gestion de la recherche de fichiers, alignement de séquences et analyse
+# VERSION COMPLÈTE AVEC TOUTES LES FONCTIONS - ALIGNEMENT PDF CORRIGÉ
 # ==============================================================================
 
 library(shiny)
@@ -13,128 +13,90 @@ server_clonage <- function(input, output, session) {
   # VARIABLES RÉACTIVES
   # ==============================================================================
 
-  # Données de la séquence de référence (GenBank)
   data_xdna <- reactiveValues(
-    seq = NULL,        # Séquence ADN de référence
-    features = NULL    # Annotations GenBank
+    seq = NULL,
+    features = NULL
   )
 
-  # Données d'alignement
   alignment_data <- reactiveValues(
-    results = NULL,      # Résultats HTML des alignements
-    text_version = NULL  # Version texte pour export
+    results = NULL,
+    text_version = NULL
   )
 
-  # Données de recherche de fichiers
   search_data <- reactiveValues(
-    folders_found = character(),      # Dossiers trouvés
-    seq_files_found = character(),    # Noms d'affichage des fichiers .seq
-    seq_files_paths = character(),    # Chemins complets des fichiers .seq
-    search_in_progress = FALSE,       # Indicateur de recherche en cours
-    stop_search = FALSE               # Signal d'arrêt de recherche
+    folders_found = character(),
+    seq_files_found = character(),
+    seq_files_paths = character(),
+    search_in_progress = FALSE,
+    stop_search = FALSE
+  )
+
+  alignment_progress <- reactiveValues(
+    in_progress = FALSE,
+    complete = FALSE,
+    status_message = "Prêt"
   )
 
   # ==============================================================================
   # CONFIGURATION DES CHEMINS
   # ==============================================================================
 
-  # Répertoires de travail (à adapter selon votre environnement)
-  # Production : "/data/production/SEQ/..."
-  # Local Windows : "P:/SEQ/..."
-
-  # Détection automatique de l'environnement
   if (dir.exists("/data/production/SEQ")) {
-    # Environnement Docker/Production
-    xdna_dir <- "/data/production/SEQ/Atest_cae"      # Fichiers GenBank (.gb)
-    seq_base_dir <- "/data/production/SEQ"            # Dossiers avec fichiers .seq
+    xdna_dir <- "/data/production/SEQ/Atest_cae"
+    seq_base_dir <- "/data/production/SEQ"
   } else if (dir.exists("../data/production/SEQ")) {
-    # Environnement de développement relatif
     xdna_dir <- "../data/production/SEQ/Atest_cae"
     seq_base_dir <- "../data/production/SEQ"
   } else {
-    # Fallback Windows (développement local)
     xdna_dir <- "P:/SEQ/Atest_cae"
     seq_base_dir <- "P:/SEQ"
   }
 
-  # Affichage des chemins utilisés (pour debug)
   cat("📁 Chemins configurés:\n")
   cat("   - GenBank (.gb):", xdna_dir, "\n")
   cat("   - Séquences (.seq):", seq_base_dir, "\n")
-  cat("   - GenBank existe:", dir.exists(xdna_dir), "\n")
-  cat("   - Séquences existe:", dir.exists(seq_base_dir), "\n")
 
   # ==============================================================================
-  # FONCTIONS DE RECHERCHE ULTRA-RAPIDE
+  # FONCTIONS DE RECHERCHE
   # ==============================================================================
 
-  #' Recherche ultra-rapide de dossiers par pattern
-  #' Utilise Sys.glob pour une recherche directe très performante
-  #' @param plate_keyword Mot-clé de recherche pour la plaque
-  #' @param base_dir Répertoire de base pour la recherche
-  #' @return Chemin du dossier le plus récent trouvé ou vecteur vide
   search_ultra_fast <- function(plate_keyword, base_dir = "P:/SEQ") {
     if (is.null(plate_keyword) || plate_keyword == "") {
       return(character())
     }
 
-    # Validation du répertoire de base
     if (!dir.exists(base_dir)) {
       return(character())
     }
 
-    # Interface de progression Shiny
     withProgress(message = 'Recherche ultra-rapide...', value = 0, {
-
       tryCatch({
-        # Nettoyage et préparation
         plate_keyword <- trimws(plate_keyword)
-        start_time <- Sys.time()
-
         incProgress(0.3, detail = paste("Recherche directe de '*", plate_keyword, "*'...", sep=""))
 
-        # Recherche directe par pattern avec Sys.glob (très rapide)
         search_pattern <- paste0("*", plate_keyword, "*")
         matching_folders <- Sys.glob(file.path(base_dir, search_pattern))
-
-        # Filtrage pour ne garder que les dossiers
         matching_folders <- matching_folders[file.info(matching_folders)$isdir]
-        search_time <- as.numeric(difftime(Sys.time(), start_time, units = "secs"))
 
         if (length(matching_folders) == 0) {
-          incProgress(1, detail = paste("Aucun dossier trouvé en", round(search_time, 2), "s"))
-          print(paste("❌ Aucun dossier trouvé pour le pattern:", search_pattern))
+          incProgress(1, detail = "Aucun dossier trouvé")
           return(character())
         }
 
-        incProgress(0.3, detail = paste(length(matching_folders), "dossiers trouvés, tri..."))
-
-        # Tri par nom décroissant pour avoir le plus récent en premier
+        incProgress(0.3, detail = paste(length(matching_folders), "dossiers trouvés"))
         matching_folders <- sort(matching_folders, decreasing = TRUE)
         selected_folder <- matching_folders[1]
 
-        total_time <- as.numeric(difftime(Sys.time(), start_time, units = "secs"))
-        incProgress(0.4, detail = paste("Sélectionné:", basename(selected_folder), "en", round(total_time, 2), "s"))
-
-        # Logs de diagnostic
-        print(paste("✅ Recherche ultra-rapide terminée en", round(total_time, 2), "secondes"))
-        print(paste("📂 Dossiers trouvés:", length(matching_folders)))
-        print(paste("🏆 Dossier sélectionné:", basename(selected_folder)))
-
+        incProgress(0.4, detail = paste("Sélectionné:", basename(selected_folder)))
         return(selected_folder)
 
       }, error = function(e) {
         incProgress(1, detail = paste("Erreur:", e$message))
-        print(paste("❌ Erreur:", e$message))
         return(character())
       })
     })
   }
 
-  #' Recherche exhaustive de fichiers .seq dans un dossier
-  #' @param folder_path Chemin du dossier à analyser
-  #' @param seq_keyword Mot-clé pour filtrer les fichiers .seq
-  #' @return Liste avec noms d'affichage et chemins complets des fichiers
   search_all_seq_in_folder <- function(folder_path, seq_keyword) {
     if (length(folder_path) == 0 || is.null(seq_keyword) || seq_keyword == "") {
       return(list(files = character(), paths = character()))
@@ -142,54 +104,33 @@ server_clonage <- function(input, output, session) {
 
     tryCatch({
       seq_keyword <- trimws(seq_keyword)
-      print(paste("🔍 Recherche fichiers .seq avec mot-clé:", seq_keyword))
-      print(paste("📁 Dans le dossier:", basename(folder_path)))
 
-      # Validation du dossier
       if (!dir.exists(folder_path)) {
-        print(paste("❌ Dossier n'existe pas:", folder_path))
         return(list(files = character(), paths = character()))
       }
 
-      # Recherche récursive de tous les fichiers .seq
-      print("🔄 Scan de tous les fichiers .seq...")
       seq_files <- list.files(folder_path, pattern = "\\.seq$",
                               recursive = TRUE, full.names = TRUE, ignore.case = TRUE)
 
-      print(paste("📊 Total fichiers .seq trouvés:", length(seq_files)))
-
       if (length(seq_files) == 0) {
-        print("❌ Aucun fichier .seq trouvé dans ce dossier")
         return(list(files = character(), paths = character()))
       }
 
-      # Filtrage par mot-clé dans le nom de fichier
       file_names <- basename(seq_files)
       matching_indices <- grep(seq_keyword, file_names, ignore.case = TRUE)
 
       if (length(matching_indices) == 0) {
-        print(paste("❌ Aucun fichier .seq correspondant au mot-clé '", seq_keyword, "'"))
-        # Affichage d'exemples pour aider l'utilisateur
-        print(paste("📋 Exemples de fichiers trouvés:",
-                    paste(file_names[1:min(5, length(file_names))], collapse = ", ")))
         return(list(files = character(), paths = character()))
       }
 
-      print(paste("✅ Fichiers correspondants au mot-clé:", length(matching_indices)))
-
       matching_files <- seq_files[matching_indices]
-      matching_names <- file_names[matching_indices]
-
-      # Création de noms d'affichage avec chemin relatif
       folder_name <- basename(folder_path)
       display_names <- character()
 
       for (i in seq_along(matching_files)) {
-        # Calcul du chemin relatif
         relative_path <- gsub(paste0("^", gsub("([\\(\\)\\[\\]\\{\\}\\^\\$\\*\\+\\?\\|\\\\])",
                                                "\\\\\\1", folder_path), "[\\/\\\\]?"), "", matching_files[i])
 
-        # Formatage du nom d'affichage avec indication du sous-dossier si applicable
         if (dirname(relative_path) != ".") {
           display_names[i] <- paste0("[", folder_name, "] ", dirname(relative_path), " → ", basename(relative_path))
         } else {
@@ -197,13 +138,9 @@ server_clonage <- function(input, output, session) {
         }
       }
 
-      print(paste("📋 Exemples de fichiers trouvés:",
-                  paste(display_names[1:min(3, length(display_names))], collapse = ", ")))
-
       return(list(files = display_names, paths = matching_files))
 
     }, error = function(e) {
-      print(paste("❌ Erreur dans search_all_seq_in_folder:", e$message))
       return(list(files = character(), paths = character()))
     })
   }
@@ -212,20 +149,16 @@ server_clonage <- function(input, output, session) {
   # GESTION DES FICHIERS GENBANK
   # ==============================================================================
 
-  #' Récupération de la liste des fichiers GenBank disponibles
-  #' @return Vecteur des noms de fichiers .gb
   get_available_gb_files <- function() {
     gb_files <- list.files(xdna_dir, pattern = "\\.gb$", full.names = FALSE)
     return(gb_files)
   }
 
-  # Initialisation de la liste des fichiers GenBank au démarrage
   observe({
     gb_files <- get_available_gb_files()
     updateSelectInput(session, "carte_xdna", choices = gb_files)
   })
 
-  # Rafraîchissement manuel de la liste des fichiers GenBank
   observeEvent(input$refresh_files, {
     gb_files <- get_available_gb_files()
     updateSelectInput(session, "carte_xdna", choices = gb_files)
@@ -233,23 +166,19 @@ server_clonage <- function(input, output, session) {
   })
 
   # ==============================================================================
-  # ANALYSE DES SITES DE RESTRICTION
+  # SITES DE RESTRICTION
   # ==============================================================================
 
-  #' Calcul réactif des sites de restriction
-  #' Analyse la séquence de référence avec les enzymes sélectionnées
   restriction_sites <- reactive({
     req(data_xdna$seq)
     sites_list <- list()
     enzymes <- get_restriction_enzymes()
 
-    # Analyse enzyme 1
     if (!is.null(input$enzyme1) && input$enzyme1 != "") {
       sites1 <- find_restriction_sites(data_xdna$seq, enzymes[[input$enzyme1]])
       if (length(sites1) > 0) sites_list[[input$enzyme1]] <- sites1
     }
 
-    # Analyse enzyme 2
     if (!is.null(input$enzyme2) && input$enzyme2 != "") {
       sites2 <- find_restriction_sites(data_xdna$seq, enzymes[[input$enzyme2]])
       if (length(sites2) > 0) sites_list[[input$enzyme2]] <- sites2
@@ -258,7 +187,6 @@ server_clonage <- function(input, output, session) {
     return(sites_list)
   })
 
-  # Affichage des informations sur les sites de restriction trouvés
   output$restriction_info <- renderText({
     sites <- restriction_sites()
     if (length(sites) == 0) return("Aucun site trouvé")
@@ -268,21 +196,18 @@ server_clonage <- function(input, output, session) {
   })
 
   # ==============================================================================
-  # GESTION DE LA RECHERCHE DE FICHIERS
+  # GESTION DE LA RECHERCHE
   # ==============================================================================
 
-  # Signal d'arrêt de recherche
   observeEvent(input$stop_search, {
     search_data$stop_search <- TRUE
     search_data$search_in_progress <- FALSE
     showNotification("🛑 Recherche interrompue", type = "warning", duration = 2)
   })
 
-  # Événement principal de recherche de fichiers .seq
   observeEvent(input$search_seq_btn, {
     req(input$plate_keyword, input$seq_keyword)
 
-    # Validation des entrées utilisateur
     if (nchar(trimws(input$plate_keyword)) == 0) {
       showNotification("⚠️ Veuillez saisir un nom de plaque", type = "warning", duration = 3)
       return()
@@ -293,7 +218,6 @@ server_clonage <- function(input, output, session) {
       return()
     }
 
-    # Réinitialisation des flags et données
     search_data$stop_search <- FALSE
     search_data$search_in_progress <- TRUE
     search_data$folders_found <- character()
@@ -301,9 +225,7 @@ server_clonage <- function(input, output, session) {
     search_data$seq_files_paths <- character()
     updateSelectInput(session, "seq_files", choices = NULL)
 
-    # Processus de recherche principal
     tryCatch({
-      # Phase 1: Recherche ultra-rapide du dossier de plaque
       plate_folder <- search_ultra_fast(input$plate_keyword, seq_base_dir)
 
       if (length(plate_folder) == 0) {
@@ -315,7 +237,6 @@ server_clonage <- function(input, output, session) {
       search_data$folders_found <- plate_folder
       showNotification(paste("📂 Dossier sélectionné:", basename(plate_folder)), type = "message", duration = 3)
 
-      # Phase 2: Recherche exhaustive des fichiers .seq
       if (!search_data$stop_search) {
         withProgress(message = 'Recherche fichiers .seq...', value = 0, {
           incProgress(0.5, detail = "Scan du dossier...")
@@ -330,7 +251,6 @@ server_clonage <- function(input, output, session) {
           if (length(seq_results$files) == 0) {
             showNotification("❌ Aucun fichier .seq trouvé avec ce mot-clé", type = "warning", duration = 5)
           } else {
-            # Mise à jour de l'interface avec les fichiers trouvés
             choices_list <- setNames(seq_results$paths, seq_results$files)
             updateSelectInput(session, "seq_files", choices = choices_list)
             showNotification(paste("✅", length(seq_results$files), "fichier(s) .seq trouvé(s)"),
@@ -343,21 +263,18 @@ server_clonage <- function(input, output, session) {
       search_data$search_in_progress <- FALSE
       showNotification(paste("❌ Erreur lors de la recherche:", as.character(e$message)),
                        type = "error", duration = 5)
-      print(paste("❌ Erreur de recherche:", e$message))
     })
   })
 
   # ==============================================================================
-  # OUTPUTS POUR L'INTERFACE UTILISATEUR
+  # OUTPUTS INTERFACE
   # ==============================================================================
 
-  # Indicateur de recherche en cours (pour affichage conditionnel)
   output$search_in_progress <- reactive({
     search_data$search_in_progress
   })
   outputOptions(output, "search_in_progress", suspendWhenHidden = FALSE)
 
-  # Affichage formaté des résultats de recherche
   output$search_results <- renderText({
     req(length(search_data$folders_found) > 0 || length(search_data$seq_files_found) > 0)
 
@@ -366,7 +283,6 @@ server_clonage <- function(input, output, session) {
       folders_text <- paste0("📂 Dossier sélectionné: ", folder_name)
 
       if (length(search_data$seq_files_found) > 0) {
-        # Limitation de l'affichage pour éviter la surcharge
         files_preview <- if (length(search_data$seq_files_found) > 5) {
           c(search_data$seq_files_found[1:5], "...")
         } else {
@@ -384,41 +300,43 @@ server_clonage <- function(input, output, session) {
     }
   })
 
-  # Condition d'affichage du sélecteur de fichiers
   output$seq_files_found <- reactive({
     length(search_data$seq_files_found) > 0
   })
   outputOptions(output, "seq_files_found", suspendWhenHidden = FALSE)
 
   # ==============================================================================
-  # CHARGEMENT ET TRAITEMENT DES FICHIERS GENBANK
+  # CHARGEMENT GENBANK
   # ==============================================================================
 
-  # Événement de chargement et alignement des séquences
   observeEvent(input$align_btn, {
     req(input$carte_xdna)
+
+    alignment_progress$in_progress <- TRUE
+    alignment_progress$complete <- FALSE
+    alignment_progress$status_message <- "Chargement du fichier GenBank..."
+
+    Sys.sleep(0.1)
+
     fichier <- file.path(xdna_dir, input$carte_xdna)
 
-    # Lecture robuste du fichier GenBank avec gestion d'encodage
     tryCatch({
-      # Tentative de lecture en UTF-8
+      alignment_progress$status_message <- "Lecture du fichier GenBank..."
       gb_lines <- readLines(fichier, warn = FALSE, encoding = "UTF-8")
     }, error = function(e) {
-      # Fallback sur latin1 si UTF-8 échoue
       tryCatch({
         gb_lines <- readLines(fichier, warn = FALSE, encoding = "latin1")
       }, error = function(e2) {
-        # Dernière option: lecture brute
         gb_lines <- readLines(fichier, warn = FALSE)
       })
     })
 
-    # Nettoyage des caractères problématiques
+    alignment_progress$status_message <- "Nettoyage des données..."
     gb_lines <- iconv(gb_lines, to = "UTF-8", sub = "")
     gb_lines <- gb_lines[!is.na(gb_lines)]
-    gb_lines <- gsub("[^\x01-\x7F]", "", gb_lines)  # Suppression caractères non-ASCII
+    gb_lines <- gsub("[^\x01-\x7F]", "", gb_lines)
 
-    # Localisation de la section ORIGIN (début de la séquence)
+    alignment_progress$status_message <- "Extraction de la séquence..."
     origin_line <- tryCatch({
       grep("^ORIGIN", gb_lines, ignore.case = TRUE)
     }, warning = function(w) {
@@ -426,12 +344,14 @@ server_clonage <- function(input, output, session) {
     })
 
     if (length(origin_line) == 0) {
+      alignment_progress$in_progress <- FALSE
+      alignment_progress$status_message <- "Erreur: Section ORIGIN non trouvée"
       showNotification("Erreur: Section ORIGIN non trouvée dans le fichier GenBank",
                        type = "error", duration = 5)
       return()
     }
 
-    # Extraction des features (annotations)
+    alignment_progress$status_message <- "Extraction des annotations..."
     features_block <- gb_lines[1:(origin_line[1] - 1)]
     features_lines <- tryCatch({
       features_block[grep("^\\s{5}|^\\s{21}", features_block)]
@@ -441,18 +361,24 @@ server_clonage <- function(input, output, session) {
 
     data_xdna$features <- features_lines
 
-    # Extraction et nettoyage de la séquence ADN
+    alignment_progress$status_message <- "Traitement de la séquence ADN..."
     seq_lines <- gb_lines[(origin_line[1] + 1):length(gb_lines)]
     seq_raw <- paste(seq_lines, collapse = "")
     seq_clean <- gsub("[^acgtACGTnN]", "", seq_raw)
     data_xdna$seq <- Biostrings::DNAString(toupper(seq_clean))
+
+    alignment_progress$status_message <- "Séquence chargée avec succès"
+    Sys.sleep(0.5)
+    alignment_progress$in_progress <- FALSE
+    alignment_progress$complete <- TRUE
+
+    showNotification("✅ Séquence GenBank chargée avec succès !",
+                     type = "message", duration = 3)
   })
 
-  # Chargement réactif des séquences .seq sélectionnées
   seqs <- eventReactive(input$align_btn, {
     req(input$seq_files)
 
-    # Traitement de chaque fichier .seq sélectionné
     lapply(input$seq_files, function(f) {
       lines <- readLines(f, warn = FALSE)
       seq_raw <- paste(lines, collapse = "")
@@ -462,125 +388,186 @@ server_clonage <- function(input, output, session) {
   })
 
   # ==============================================================================
-  # AFFICHAGE DES INFORMATIONS
+  # OUTPUTS PROGRESSION
   # ==============================================================================
 
-  # Affichage de la séquence de référence et de ses annotations
-  output$seq_xdna <- renderPrint({
-    req(data_xdna$seq)
-    cat("Séquence GenBank :\n")
-    print(data_xdna$seq)
-    cat("\nAnnotations (Features) :\n")
-    print(data_xdna$features)
+  output$alignment_in_progress <- reactive({
+    alignment_progress$in_progress
+  })
+  outputOptions(output, "alignment_in_progress", suspendWhenHidden = FALSE)
+
+  output$processing_status <- renderUI({
+    if (alignment_progress$in_progress) {
+      tags$div(
+        style = "color: #1976d2; font-weight: bold;",
+        "⏳ ", alignment_progress$status_message
+      )
+    } else if (alignment_progress$complete) {
+      tags$div(
+        style = "color: #388e3c; font-weight: bold;",
+        "✅ Prêt pour l'alignement"
+      )
+    } else {
+      tags$div(
+        style = "color: #757575;",
+        "💤 En attente..."
+      )
+    }
   })
 
-  # Affichage des séquences sélectionnées
-  output$seqs_selected <- renderPrint({
+  output$alignment_complete <- reactive({
+    if (alignment_progress$complete) {
+      Sys.sleep(0.5)
+      return(TRUE)
+    }
+    return(FALSE)
+  })
+  outputOptions(output, "alignment_complete", suspendWhenHidden = FALSE)
+
+  # ==============================================================================
+  # AFFICHAGE INFORMATIONS
+  # ==============================================================================
+
+  output$seq_xdna_compact <- renderText({
+    req(data_xdna$seq)
+
+    seq_text <- paste0("📋 Séquence GenBank (", length(data_xdna$seq), " nt):\n")
+    seq_text <- paste0(seq_text, as.character(data_xdna$seq), "\n\n")
+
+    seq_text <- paste0(seq_text, "🏷️ Annotations (Features):\n")
+    if (!is.null(data_xdna$features) && length(data_xdna$features) > 0) {
+      for (i in seq_along(data_xdna$features)) {
+        seq_text <- paste0(seq_text, sprintf("%3d: %s\n", i, data_xdna$features[i]))
+      }
+    } else {
+      seq_text <- paste0(seq_text, "Aucune annotation trouvée\n")
+    }
+
+    return(seq_text)
+  })
+
+  output$seqs_selected_compact <- renderText({
     req(seqs())
-    cat("Séquences chargées des fichiers .seq :\n")
 
     selected_files <- input$seq_files
     if (!is.null(selected_files)) {
+      result <- paste0("🧬 Séquences chargées (", length(seqs()), "):\n\n")
+
       for (i in seq_along(seqs())) {
         file_name <- basename(selected_files[i])
-        cat(" - ", file_name, ": ", as.character(seqs()[[i]]), "\n")
+        seq_length <- length(seqs()[[i]])
+        seq_string <- as.character(seqs()[[i]])
+
+        result <- paste0(result, sprintf("=== %d. %s (%d nt) ===\n", i, file_name, seq_length))
+        result <- paste0(result, seq_string, "\n\n")
       }
+      return(result)
+    } else {
+      return("Aucune séquence sélectionnée")
     }
   })
 
   # ==============================================================================
-  # GÉNÉRATION DES ALIGNEMENTS
+  # GÉNÉRATION ALIGNEMENTS AVEC COULEURS
   # ==============================================================================
 
-  # Génération et affichage des résultats d'alignement
   output$align_results <- renderUI({
     req(data_xdna$seq, seqs())
 
-    # Génération de la légende des couleurs
-    legend_content <- generate_color_legend(data_xdna$features, restriction_sites())
+    withProgress(message = 'Génération des alignements...', value = 0, {
 
-    align_output <- character()
-    text_output <- character()
-    selected_files <- input$seq_files
+      incProgress(0.1, detail = "Préparation des données...")
 
-    # Traitement de chaque séquence pour alignement
-    for (i in seq_along(seqs())) {
-      # Alignement par paires avec la séquence de référence
-      aln <- Biostrings::pairwiseAlignment(
-        pattern = seqs()[[i]],
-        subject = data_xdna$seq,
-        type = "local",
-        substitutionMatrix = nucleotideSubstitutionMatrix(match = 2, mismatch = -1),
-        gapOpening = -2,
-        gapExtension = -1
-      )
+      # Génération de la légende des couleurs
+      legend_content <- generate_color_legend(data_xdna$features, restriction_sites())
 
-      # Extraction des informations d'alignement
-      aln_start <- start(subject(aln))
-      aln_end <- end(subject(aln))
-      pat_aligned <- as.character(pattern(aln))
-      sub_aligned <- as.character(subject(aln))
-      annot_aligned <- annotate_sequence_mutations(pat_aligned, sub_aligned)
+      align_output <- character()
+      text_output <- character()
+      selected_files <- input$seq_files
 
-      # Création des séquences complètes avec gaps
-      full_pattern <- create_full_pattern_with_gaps(pat_aligned, aln_start, length(data_xdna$seq))
-      full_subject <- as.character(data_xdna$seq)
-      full_annot <- create_full_annotation_with_spaces(annot_aligned, aln_start, length(data_xdna$seq))
+      total_seqs <- length(seqs())
 
-      # Préparation des cartes de couleurs et restrictions
-      colors <- build_sequence_color_map(data_xdna$features, 1, length(data_xdna$seq))
-      restriction_positions <- build_restriction_position_map(length(data_xdna$seq), restriction_sites())
+      # Traitement de chaque séquence pour alignement
+      for (i in seq_along(seqs())) {
+        incProgress(0.7/total_seqs, detail = paste("Alignement", i, "sur", total_seqs))
 
-      # Nom d'affichage du fichier
-      file_display_name <- if (!is.null(selected_files) && i <= length(selected_files)) {
-        basename(selected_files[i])
-      } else {
-        paste0("Fichier_", i)
+        # Alignement par paires avec la séquence de référence
+        aln <- Biostrings::pairwiseAlignment(
+          pattern = seqs()[[i]],
+          subject = data_xdna$seq,
+          type = "local",
+          substitutionMatrix = nucleotideSubstitutionMatrix(match = 2, mismatch = -1),
+          gapOpening = -2,
+          gapExtension = -1
+        )
+
+        # Extraction des informations d'alignement
+        aln_start <- start(subject(aln))
+        aln_end <- end(subject(aln))
+        pat_aligned <- as.character(pattern(aln))
+        sub_aligned <- as.character(subject(aln))
+        annot_aligned <- annotate_sequence_mutations(pat_aligned, sub_aligned)
+
+        # Création des séquences complètes avec gaps
+        full_pattern <- create_full_pattern_with_gaps(pat_aligned, aln_start, length(data_xdna$seq))
+        full_subject <- as.character(data_xdna$seq)
+        full_annot <- create_full_annotation_with_spaces(annot_aligned, aln_start, length(data_xdna$seq))
+
+        # Préparation des cartes de couleurs et restrictions
+        colors <- build_sequence_color_map(data_xdna$features, 1, length(data_xdna$seq))
+        restriction_positions <- build_restriction_position_map(length(data_xdna$seq), restriction_sites())
+
+        # Nom d'affichage du fichier
+        file_display_name <- if (!is.null(selected_files) && i <= length(selected_files)) {
+          basename(selected_files[i])
+        } else {
+          paste0("Fichier_", i)
+        }
+
+        # Génération de l'alignement coloré
+        blast_alignment <- generate_colored_alignment(
+          full_pattern, full_subject, full_annot, aln_start, colors,
+          paste0(file_display_name, " (région alignée: ", aln_start, "-", aln_end, ")"),
+          restriction_positions
+        )
+
+        align_output <- c(align_output, blast_alignment$html)
+        text_output <- c(text_output, blast_alignment$text)
       }
 
-      # Génération de l'alignement coloré
-      blast_alignment <- generate_colored_alignment(
-        full_pattern, full_subject, full_annot, aln_start, colors,
-        paste0(file_display_name, " (région alignée: ", aln_start, "-", aln_end, ")"),
-        restriction_positions
-      )
+      incProgress(0.2, detail = "Finalisation...")
 
-      align_output <- c(align_output, blast_alignment$html)
-      text_output <- c(text_output, blast_alignment$text)
-    }
+      # Sauvegarde pour les exports
+      alignment_data$results <- align_output
+      alignment_data$text_version <- paste(text_output, collapse = "")
 
-    # Sauvegarde pour les exports
-    alignment_data$results <- align_output
-    alignment_data$text_version <- paste(text_output, collapse = "")
-
-    # Structure HTML finale avec légende et alignements côte à côte
-    tags$div(
-      id = "align_results",
-      class = "results-container",
+      # Structure HTML finale avec légende et alignements côte à côte
       tags$div(
-        class = "legend-container",
-        HTML(legend_content)
-      ),
-      tags$div(
-        class = "alignments-container",
-        HTML(paste(align_output, collapse = ""))
+        id = "align_results",
+        class = "results-container",
+        tags$div(
+          class = "legend-container",
+          HTML(legend_content)
+        ),
+        tags$div(
+          class = "alignments-container",
+          HTML(paste(align_output, collapse = ""))
+        )
       )
-    )
+    })
   })
 
   # ==============================================================================
-  # GESTIONNAIRES DE TÉLÉCHARGEMENT
+  # TÉLÉCHARGEMENTS COMPLETS
   # ==============================================================================
 
-  # Téléchargement au format TXT avec en-têtes et légendes
-  output$download_txt <- downloadHandler(
+  output$download_html <- downloadHandler(
     filename = function() {
-      paste0("alignement_", Sys.Date(), ".txt")
+      paste0("alignement_complet_", Sys.Date(), "_", format(Sys.time(), "%H%M"), ".html")
     },
     content = function(file) {
-      req(alignment_data$text_version)
+      req(data_xdna$seq)
 
-      # Préparation de la liste des fichiers pour l'en-tête
       selected_files <- input$seq_files
       files_display <- if (!is.null(selected_files)) {
         paste(basename(selected_files), collapse = ", ")
@@ -588,50 +575,107 @@ server_clonage <- function(input, output, session) {
         "Aucun fichier sélectionné"
       }
 
-      # En-tête du fichier
-      header <- paste0(
-        "=== RESULTATS D'ALIGNEMENT - HGX ===\n",
-        "Date: ", Sys.time(), "\n",
-        "Carte GenBank: ", input$carte_xdna, "\n",
-        "Fichiers séquences: ", files_display, "\n",
-        "Longueur séquence référence: ", length(data_xdna$seq), " nt\n\n",
-        "LEGENDE DES COULEURS:\n"
+      html_content <- paste0(
+        "<!DOCTYPE html>\n<html lang='fr'>\n<head>\n",
+        "<meta charset='UTF-8'>\n",
+        "<title>Rapport d'alignement HGX - ", Sys.Date(), "</title>\n",
+        "<style>\n",
+        "body { font-family: Arial, sans-serif; margin: 20px; background: #f8f9fa; }\n",
+        ".container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }\n",
+        ".sequence-box { background: #ffffff; padding: 15px; border: 1px solid #dee2e6; border-radius: 4px; font-family: 'Courier New', monospace; font-size: 10px; white-space: pre-wrap; word-wrap: break-word; margin: 10px 0; }\n",
+        ".legend-item { margin: 5px 0; }\n",
+        ".color-box { display: inline-block; width: 16px; height: 16px; margin-right: 8px; border: 1px solid #ccc; }\n",
+        "h1 { color: #b22222; margin: 0; }\n",
+        "h2 { color: #2c3e50; border-bottom: 2px solid #dee2e6; padding-bottom: 10px; }\n",
+        ".alignment-block { margin: 20px 0; padding: 15px; background: #ffffff; border: 1px solid #e0e0e0; border-radius: 5px; }\n",
+        ".alignment-title { color: #2c3e50; font-weight: bold; margin-bottom: 10px; border-bottom: 2px solid #b22222; padding-bottom: 5px; }\n",
+        "table { border-collapse: collapse; font-family: 'Courier New', monospace; }\n",
+        "td { padding: 0; margin: 0; text-align: center; width: 1ch; min-width: 1ch; max-width: 1ch; }\n",
+        "</style>\n</head>\n<body>\n"
       )
 
-      # Génération de la légende des features
+      html_content <- paste0(html_content, "<div class='container'>\n")
+      html_content <- paste0(html_content, "<h1>🧬 RAPPORT D'ALIGNEMENT HGX</h1>\n")
+      html_content <- paste0(html_content, "<p>Généré le ", Sys.time(), "</p>\n")
+      html_content <- paste0(html_content, "<p><strong>Carte GenBank:</strong> ", input$carte_xdna, "</p>\n")
+      html_content <- paste0(html_content, "<p><strong>Fichiers:</strong> ", files_display, "</p>\n")
+
+      html_content <- paste0(html_content, "<h2>📋 Séquence GenBank de référence</h2>\n")
+      html_content <- paste0(html_content, "<div class='sequence-box'>", as.character(data_xdna$seq), "</div>\n")
+
+      if (!is.null(selected_files) && length(seqs()) > 0) {
+        html_content <- paste0(html_content, "<h2>🧬 Séquences testées</h2>\n")
+        for (i in seq_along(seqs())) {
+          file_name <- basename(selected_files[i])
+          seq_string <- as.character(seqs()[[i]])
+          html_content <- paste0(html_content, "<h3>", i, ". ", file_name, "</h3>\n")
+          html_content <- paste0(html_content, "<div class='sequence-box'>", seq_string, "</div>\n")
+        }
+      }
+
+      # Légende des couleurs
       feats <- parse_genbank_features(data_xdna$features)
-      legend_text <- ""
-      for (feat in feats) {
-        if (!is.na(feat$position_raw)) {
-          bounds <- as.numeric(unlist(strsplit(feat$position_raw, "\\.\\.")))
-          if (length(bounds) == 2) {
-            name_display <- if (feat$name != "") feat$name else "Feature sans nom"
-            legend_text <- paste0(legend_text, "- ", name_display, " (", bounds[1], "-", bounds[2],
-                                  ") - Couleur: ", feat$color, "\n")
+      if (length(feats) > 0) {
+        html_content <- paste0(html_content, "<h2>🎨 Légende des couleurs</h2>\n")
+        for (feat in feats) {
+          if (!is.na(feat$position_raw)) {
+            bounds <- as.numeric(unlist(strsplit(feat$position_raw, "\\.\\.")))
+            if (length(bounds) == 2) {
+              name_display <- if (feat$name != "") feat$name else paste("Feature", feat$type)
+              color_to_use <- feat$color
+              if (color_to_use == "#000000") {
+                color_to_use <- get_color_by_feature_name(feat$name)
+              }
+              html_content <- paste0(html_content,
+                                     "<div class='legend-item'>",
+                                     "<span class='color-box' style='background-color:", color_to_use, ";'></span>",
+                                     "<strong>", name_display, "</strong> (", bounds[1], "-", bounds[2], ")",
+                                     "</div>\n")
+            }
           }
         }
       }
 
-      # Ajout de la légende des sites de restriction
+      # Sites de restriction
       sites <- restriction_sites()
       if (length(sites) > 0) {
-        legend_text <- paste0(legend_text, "\nSITES DE RESTRICTION:\n")
+        html_content <- paste0(html_content, "<h3>Sites de restriction</h3>\n")
         enzymes <- get_restriction_enzymes()
+        colors <- c("#FF0000", "#0000FF", "#00FF00", "#FF8000", "#8000FF", "#00FFFF")
+        site_index <- 1
+
         for (enzyme_name in names(sites)) {
           enzyme_sites <- sites[[enzyme_name]]
           enzyme_seq <- enzymes[[enzyme_name]]
-          legend_text <- paste0(legend_text, "- ", enzyme_name, " (", enzyme_seq,
-                                ") - Sites: ", paste(enzyme_sites, collapse = ", "), "\n")
+          color <- colors[((site_index - 1) %% length(colors)) + 1]
+
+          html_content <- paste0(html_content,
+                                 "<div class='legend-item'>",
+                                 "<span class='color-box' style='background-color:", color, ";'></span>",
+                                 "<strong>", enzyme_name, "</strong> (", enzyme_seq, ") - Sites: ", paste(enzyme_sites, collapse = ", "),
+                                 "</div>\n")
+          site_index <- site_index + 1
         }
       }
 
-      # Assemblage final et écriture
-      content <- paste0(header, legend_text, "\n", alignment_data$text_version)
-      writeLines(content, file, useBytes = TRUE)
+      # Alignements avec couleurs
+      if (!is.null(alignment_data$results)) {
+        clean_results <- alignment_data$results
+        clean_results <- gsub('<span class="tooltip">[^<]*</span>', '', clean_results)
+        clean_results <- gsub('class="nucleotide-cell"', '', clean_results)
+
+        html_content <- paste0(html_content, "<h2>🔬 Alignements détaillés</h2>\n")
+        html_content <- paste0(html_content, "<div style='overflow-x: auto;'>")
+        html_content <- paste0(html_content, paste(clean_results, collapse = "\n"))
+        html_content <- paste0(html_content, "</div>\n")
+      }
+
+      html_content <- paste0(html_content, "</div>\n</body>\n</html>")
+
+      writeLines(html_content, file, useBytes = TRUE)
     }
   )
 
-  # Téléchargement au format FASTA
   output$download_fasta <- downloadHandler(
     filename = function() {
       paste0("alignement_", Sys.Date(), ".fasta")
@@ -641,12 +685,10 @@ server_clonage <- function(input, output, session) {
 
       fasta_content <- character()
 
-      # Ajout de la séquence de référence
       fasta_content <- c(fasta_content,
                          paste0(">Sequence_Reference_", gsub("\\.gb$", "", input$carte_xdna)),
                          as.character(data_xdna$seq))
 
-      # Ajout des séquences testées
       selected_files <- input$seq_files
       for (i in seq_along(seqs())) {
         if (!is.null(selected_files) && i <= length(selected_files)) {
@@ -662,4 +704,5 @@ server_clonage <- function(input, output, session) {
       writeLines(fasta_content, file)
     }
   )
+
 }
