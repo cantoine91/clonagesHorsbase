@@ -854,3 +854,81 @@ create_sequence_cells <- function(sequence_chars, base_style, start_position = 1
   }
   return(cells)
 }
+
+# ==============================================================================
+# Gestion des groupes de clones
+# ==============================================================================
+
+#' Extraction du groupe de clone par avant-dernier et dernier underscore
+#' @param filename Nom du fichier .seq
+#' @return Liste avec prefix, group et full_group
+extract_clone_group <- function(filename) {
+  # Enlever l'extension .seq
+  base_name <- gsub("\\.seq$", "", basename(filename))
+
+  # Séparer par underscore
+  parts <- strsplit(base_name, "_")[[1]]
+
+  if (length(parts) >= 2) {
+    # Ce qu'il y a entre l'avant-dernier et le dernier underscore
+    clone_id <- parts[length(parts) - 1]  # Avant-dernier élément
+
+    # Utiliser le clone_id comme groupe
+    group_key <- clone_id
+
+    # Le préfixe = tout sauf les deux derniers éléments
+    if (length(parts) > 2) {
+      prefix <- paste(parts[1:(length(parts)-2)], collapse = "_")
+    } else {
+      prefix <- parts[1]
+    }
+
+    return(list(
+      prefix = prefix,
+      group = group_key,
+      full_group = paste(prefix, group_key, sep = "_")
+    ))
+  } else {
+    # Si pas assez d'underscores, utiliser le nom complet
+    return(list(
+      prefix = base_name,
+      group = base_name,
+      full_group = base_name
+    ))
+  }
+}
+
+#' Organisation des fichiers par groupes - VERSION SIMPLIFIÉE
+#' @param file_paths Vecteur des chemins complets des fichiers
+#' @param file_names Vecteur des noms d'affichage
+#' @return Liste organisée par groupes
+organize_files_by_groups <- function(file_paths, file_names) {
+  if (length(file_paths) == 0) {
+    return(list())
+  }
+
+  groups <- list()
+
+  for (i in seq_along(file_paths)) {
+    file_path <- file_paths[i]
+    display_name <- file_names[i]
+
+    # Extraire le groupe
+    clone_info <- extract_clone_group(file_path)
+    group_key <- clone_info$group  # Ce sera "A-1", "A-2", etc.
+
+    if (is.null(groups[[group_key]])) {
+      groups[[group_key]] <- list(
+        files = character(),
+        paths = character(),
+        display_names = character()
+      )
+    }
+
+    groups[[group_key]]$files <- c(groups[[group_key]]$files, basename(file_path))
+    groups[[group_key]]$paths <- c(groups[[group_key]]$paths, file_path)
+    groups[[group_key]]$display_names <- c(groups[[group_key]]$display_names, display_name)
+  }
+
+  return(groups)
+}

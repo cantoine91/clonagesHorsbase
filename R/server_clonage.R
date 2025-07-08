@@ -28,7 +28,8 @@ server_clonage <- function(input, output, session) {
     seq_files_found = character(),
     seq_files_paths = character(),
     search_in_progress = FALSE,
-    stop_search = FALSE
+    stop_search = FALSE,
+    file_groups = list()
   )
 
   alignment_progress <- reactiveValues(
@@ -99,28 +100,28 @@ server_clonage <- function(input, output, session) {
 
   search_all_seq_in_folder <- function(folder_path, seq_keyword) {
     if (length(folder_path) == 0 || is.null(seq_keyword) || seq_keyword == "") {
-      return(list(files = character(), paths = character()))
+      return(list(files = character(), paths = character(), groups = list()))
     }
 
     tryCatch({
       seq_keyword <- trimws(seq_keyword)
 
       if (!dir.exists(folder_path)) {
-        return(list(files = character(), paths = character()))
+        return(list(files = character(), paths = character(), groups = list()))
       }
 
       seq_files <- list.files(folder_path, pattern = "\\.seq$",
                               recursive = TRUE, full.names = TRUE, ignore.case = TRUE)
 
       if (length(seq_files) == 0) {
-        return(list(files = character(), paths = character()))
+        return(list(files = character(), paths = character(), groups = list()))
       }
 
       file_names <- basename(seq_files)
       matching_indices <- grep(seq_keyword, file_names, ignore.case = TRUE)
 
       if (length(matching_indices) == 0) {
-        return(list(files = character(), paths = character()))
+        return(list(files = character(), paths = character(), groups = list()))
       }
 
       matching_files <- seq_files[matching_indices]
@@ -138,10 +139,13 @@ server_clonage <- function(input, output, session) {
         }
       }
 
-      return(list(files = display_names, paths = matching_files))
+      # Organiser par groupes
+      groups <- organize_files_by_groups(matching_files, display_names)
+
+      return(list(files = display_names, paths = matching_files, groups = groups))
 
     }, error = function(e) {
-      return(list(files = character(), paths = character()))
+      return(list(files = character(), paths = character(), groups = list()))
     })
   }
 
@@ -223,7 +227,7 @@ server_clonage <- function(input, output, session) {
     search_data$folders_found <- character()
     search_data$seq_files_found <- character()
     search_data$seq_files_paths <- character()
-    updateSelectInput(session, "seq_files", choices = NULL)
+    search_data$file_groups <- list()  # Réinitialiser les groupes
 
     tryCatch({
       plate_folder <- search_ultra_fast(input$plate_keyword, seq_base_dir)
@@ -244,6 +248,7 @@ server_clonage <- function(input, output, session) {
           seq_results <- search_all_seq_in_folder(plate_folder, input$seq_keyword)
           search_data$seq_files_found <- seq_results$files
           search_data$seq_files_paths <- seq_results$paths
+          search_data$file_groups <- seq_results$groups  # Stocker les groupes
 
           incProgress(0.5, detail = paste(length(seq_results$files), "fichiers trouvés"))
           search_data$search_in_progress <- FALSE
@@ -251,9 +256,7 @@ server_clonage <- function(input, output, session) {
           if (length(seq_results$files) == 0) {
             showNotification("❌ Aucun fichier .seq trouvé avec ce mot-clé", type = "warning", duration = 5)
           } else {
-            choices_list <- setNames(seq_results$paths, seq_results$files)
-            updateSelectInput(session, "seq_files", choices = choices_list)
-            showNotification(paste("✅", length(seq_results$files), "fichier(s) .seq trouvé(s)"),
+            showNotification(paste("✅", length(seq_results$files), "fichier(s) .seq trouvé(s) dans", length(seq_results$groups), "groupe(s)"),
                              type = "message", duration = 3)
           }
         })
@@ -266,52 +269,103 @@ server_clonage <- function(input, output, session) {
     })
   })
 
-  # Observer pour la sélection automatique des fichiers .seq
-  observeEvent(input$select_all_seq, {
-    if (input$select_all_seq && length(search_data$seq_files_paths) > 0) {
-      # Sélectionner tous les fichiers disponibles
-      updateSelectInput(session, "seq_files",
-                        selected = search_data$seq_files_paths)
-      showNotification("✅ Tous les fichiers .seq ont été sélectionnés",
-                       type = "message", duration = 3)
+  # Gestion des boutons de sélection globale
+  observeEvent(search_data$file_groups, {
+    # Supprimer les anciens observers s'ils existent
+    # Créer de nouveaux observers pour chaque groupe
+    if (!is.null(search_data$file_groups) && length(search_data$file_groups) > 0) {
+      groups <- search_data$file_groups
+
+      # Créer les observers pour chaque groupe de manière dynamique
+      lapply(seq_along(groups), function(i) {
+        group_checkbox_id <- paste0("select_group_", i)
+        group_select_id <- paste0("seq_files_group_", i)
+
+        # Vérifier si l'input existe avant de créer l'observer
+        observeEvent(input[[group_checkbox_id]], {
+          if (!is.null(input[[group_checkbox_id]])) {
+            checkbox_value <- input[[group_checkbox_id]]
+
+            if (isTRUE(checkbox_value)) {
+              # Sélectionner tous les fichiers du groupe
+              group_data <- groups[[i]]
+              if (!is.null(group_data$paths)) {
+                updateSelectInput(session, group_select_id, selected = group_data$paths)
+              }
+            } else if (isFALSE(checkbox_value)) {
+              # Désélectionner tous les fichiers du groupe
+              updateSelectInput(session, group_select_id, selected = character())
+            }
+          }
+        }, ignoreInit = TRUE, ignoreNULL = TRUE)
+      })
+    }
+  }, ignoreNULL = TRUE)
+
+  observeEvent(input$clear_all_groups, {
+    if (!is.null(search_data$file_groups) && length(search_data$file_groups) > 0) {
+      groups <- search_data$file_groups
+      for (i in seq_along(groups)) {
+        updateSelectInput(session, paste0("seq_files_group_", i), selected = character())
+        updateCheckboxInput(session, paste0("select_group_", i), value = FALSE)
+      }
+
+      showNotification("❌ Toutes les sélections ont été effacées", type = "message", duration = 3)
     }
   })
 
-  # Observer pour désélectionner la case quand l'utilisateur modifie manuellement la sélection
-  observeEvent(input$seq_files, {
-    if (!is.null(search_data$seq_files_paths) &&
-        length(search_data$seq_files_paths) > 0 &&
-        !is.null(input$seq_files)) {
+  # Gestion des boutons de sélection globale - VERSION CORRIGÉE
+  observeEvent(input$select_all_groups, {
+    if (!is.null(search_data$file_groups) && length(search_data$file_groups) > 0) {
+      groups <- search_data$file_groups
+      for (i in seq_along(groups)) {
+        group_data <- groups[[i]]
+        updateSelectInput(session, paste0("seq_files_group_", i),
+                          selected = group_data$paths)
+        updateCheckboxInput(session, paste0("select_group_", i), value = TRUE)
+      }
 
-      # Si pas tous les fichiers sélectionnés, décocher la case automatique
-      if (length(input$seq_files) != length(search_data$seq_files_paths)) {
-        updateCheckboxInput(session, "select_all_seq", value = FALSE)
+      showNotification("✅ Tous les groupes ont été sélectionnés", type = "message", duration = 3)
+    }
+  })
+
+  # Création dynamique des observers pour les checkboxes de groupe
+  observe({
+    if (!is.null(search_data$file_groups) && length(search_data$file_groups) > 0) {
+      groups <- search_data$file_groups
+
+      # Pour chaque groupe, créer un observer séparé
+      for (i in seq_along(groups)) {
+        local({
+          group_index <- i
+
+          # Observer pour le checkbox du groupe
+          observeEvent(input[[paste0("select_group_", group_index)]], {
+            checkbox_value <- input[[paste0("select_group_", group_index)]]
+
+            if (!is.null(checkbox_value) && is.logical(checkbox_value)) {
+              group_select_id <- paste0("seq_files_group_", group_index)
+
+              if (checkbox_value == TRUE) {
+                # Sélectionner tous les fichiers du groupe
+                if (group_index <= length(groups)) {
+                  group_data <- groups[[group_index]]
+                  if (!is.null(group_data) && !is.null(group_data$paths)) {
+                    updateSelectInput(session, group_select_id, selected = group_data$paths)
+                  }
+                }
+              } else {
+                # Désélectionner tous les fichiers du groupe
+                updateSelectInput(session, group_select_id, selected = character())
+              }
+            }
+          }, ignoreInit = TRUE, ignoreNULL = TRUE)
+        })
       }
     }
-  }, ignoreInit = TRUE)
-
-  # Mise à jour automatique quand de nouveaux fichiers sont trouvés
-  observe({
-    if (input$select_all_seq && length(search_data$seq_files_paths) > 0) {
-      updateSelectInput(session, "seq_files",
-                        selected = search_data$seq_files_paths)
-    }
   })
 
-  # Observer pour la sélection automatique des fichiers .seq
-  observeEvent(input$select_all_seq, {
-    if (input$select_all_seq && length(search_data$seq_files_paths) > 0) {
-      # Sélectionner tous les fichiers disponibles
-      updateSelectInput(session, "seq_files",
-                        selected = search_data$seq_files_paths)
-      showNotification("✅ Tous les fichiers .seq ont été sélectionnés",
-                       type = "message", duration = 3)
-    }
-  })
-
-
-
-  # ==============================================================================
+    # ==============================================================================
   # OUTPUTS INTERFACE
   # ==============================================================================
 
@@ -346,9 +400,89 @@ server_clonage <- function(input, output, session) {
   })
 
   output$seq_files_found <- reactive({
-    length(search_data$seq_files_found) > 0
+    !is.null(search_data$file_groups) && length(search_data$file_groups) > 0
   })
   outputOptions(output, "seq_files_found", suspendWhenHidden = FALSE)
+
+  # Output pour l'interface des groupes
+  output$groups_selection_ui <- renderUI({
+    req(search_data$file_groups)
+
+    groups <- search_data$file_groups
+    if (length(groups) == 0) return(NULL)
+
+    group_uis <- list()
+
+    for (i in seq_along(groups)) {
+      group_name <- names(groups)[i]
+      group_data <- groups[[i]]
+
+      # Créer les choix pour ce groupe
+      choices_list <- setNames(group_data$paths, group_data$display_names)
+
+      group_ui <- div(
+        style = "margin-bottom: 15px; padding: 10px; border: 1px solid #dee2e6; border-radius: 4px; background: #f8f9fa;",
+
+        # En-tête du groupe avec checkbox pour sélection/désélection du groupe
+        div(style = "margin-bottom: 10px; padding-bottom: 5px; border-bottom: 1px solid #ccc;",
+            h6(paste("🧬", group_name, "(", length(group_data$paths), "clones)"),
+               style = "color: #495057; margin: 0; display: inline-block;"),
+
+            div(style = "float: right;",
+                checkboxInput(paste0("select_group_", i),
+                              label = "Sélectionner tout le groupe",
+                              value = FALSE)
+            ),
+            div(style = "clear: both;")
+        ),
+
+        # Liste de sélection pour ce groupe - CORRECTION ICI
+        selectInput(paste0("seq_files_group_", i),
+                    label = NULL,
+                    choices = choices_list,
+                    multiple = TRUE,
+                    width = "100%",
+                    selectize = FALSE,  # AJOUT: Désactiver selectize pour pouvoir utiliser size
+                    size = min(8, length(choices_list)))  # Maintenant size est compatible
+      )
+
+      group_uis[[i]] <- group_ui
+    }
+
+    return(div(
+      h5("📁 Fichiers .seq trouvés par groupes", style = "color: #b22222; margin-bottom: 15px;"),
+      group_uis
+    ))
+  })
+
+  # Fonction pour récupérer tous les fichiers sélectionnés
+  get_all_selected_files <- reactive({
+    req(search_data$file_groups)
+
+    all_selected <- character()
+    groups <- search_data$file_groups
+
+    for (i in seq_along(groups)) {
+      group_input_name <- paste0("seq_files_group_", i)
+      group_selection <- input[[group_input_name]]
+
+      if (!is.null(group_selection) && length(group_selection) > 0) {
+        all_selected <- c(all_selected, group_selection)
+      }
+    }
+
+    return(all_selected)
+  })
+
+  # Output pour le résumé de sélection
+  output$selection_summary_text <- renderText({
+    selected_files <- get_all_selected_files()
+    if (length(selected_files) == 0) {
+      return("Aucun fichier sélectionné")
+    } else {
+      return(paste("📊 Total sélectionné:", length(selected_files), "fichier(s)"))
+    }
+  })
 
   # ==============================================================================
   # CHARGEMENT GENBANK
@@ -422,15 +556,21 @@ server_clonage <- function(input, output, session) {
   })
 
   seqs <- eventReactive(input$align_btn, {
-    req(input$seq_files)
+    selected_files <- get_all_selected_files()
 
-    lapply(input$seq_files, function(f) {
+    if (length(selected_files) == 0) {
+      showNotification("⚠️ Aucun fichier sélectionné pour l'alignement", type = "warning", duration = 3)
+      return(NULL)
+    }
+
+    lapply(selected_files, function(f) {
       lines <- readLines(f, warn = FALSE)
       seq_raw <- paste(lines, collapse = "")
       seq_clean <- clean_sequence(seq_raw)
       Biostrings::DNAString(seq_clean)
     })
   })
+
 
   # ==============================================================================
   # OUTPUTS PROGRESSION
@@ -492,10 +632,9 @@ server_clonage <- function(input, output, session) {
   })
 
   output$seqs_selected_compact <- renderText({
-    req(seqs())
+    selected_files <- get_all_selected_files()
 
-    selected_files <- input$seq_files
-    if (!is.null(selected_files)) {
+    if (length(selected_files) > 0 && !is.null(seqs())) {
       result <- paste0("🧬 Séquences chargées (", length(seqs()), "):\n\n")
 
       for (i in seq_along(seqs())) {
@@ -561,7 +700,9 @@ server_clonage <- function(input, output, session) {
 
       align_output <- character()
       text_output <- character()
-      selected_files <- input$seq_files
+
+      # CORRECTION : Utiliser get_all_selected_files() au lieu de input$seq_files
+      selected_files_paths <- get_all_selected_files()
 
       total_seqs <- length(seqs())
 
@@ -619,9 +760,9 @@ server_clonage <- function(input, output, session) {
           region_info_text <- paste0(" (région alignée: ", aln_start, "-", aln_end, ")")
         }
 
-        # Nom d'affichage du fichier
-        file_display_name <- if (!is.null(selected_files) && i <= length(selected_files)) {
-          basename(selected_files[i])
+        # CORRECTION : Nom d'affichage du fichier
+        file_display_name <- if (!is.null(selected_files_paths) && i <= length(selected_files_paths)) {
+          basename(selected_files_paths[i])
         } else {
           paste0("Fichier_", i)
         }
@@ -672,7 +813,7 @@ server_clonage <- function(input, output, session) {
     content = function(file) {
       req(data_xdna$seq)
 
-      selected_files <- input$seq_files
+      selected_files <- get_all_selected_files()
       files_display <- if (!is.null(selected_files)) {
         paste(basename(selected_files), collapse = ", ")
       } else {
@@ -793,7 +934,7 @@ server_clonage <- function(input, output, session) {
                          paste0(">Sequence_Reference_", gsub("\\.gb$", "", input$carte_xdna)),
                          as.character(data_xdna$seq))
 
-      selected_files <- input$seq_files
+      selected_files <- get_all_selected_files()
       for (i in seq_along(seqs())) {
         if (!is.null(selected_files) && i <= length(selected_files)) {
           seq_name <- gsub("\\.seq$", "", basename(selected_files[i]))

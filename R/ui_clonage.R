@@ -362,15 +362,29 @@ ui_clonage <- navbarPage(
                  # Sélection finale des fichiers .seq trouvés
                  conditionalPanel(
                    condition = "output.seq_files_found",
-                   selectInput("seq_files",
-                               "Fichiers .seq trouvés:",
-                               choices = NULL,
-                               multiple = TRUE,
-                               width = "100%"),
+
+                   # Affichage dynamique des groupes
+                   uiOutput("groups_selection_ui"),
+
                    div(style = "margin-top: 15px; padding: 10px; background: #f1f3f4; border-radius: 4px;",
-                       checkboxInput("select_all_seq",
-                                     label = "Sélectionner tous les fichiers .seq",
-                                     value = FALSE)
+                       h5("⚙️ Sélection globale", style = "color: #b22222; margin-top: 0; margin-bottom: 10px;"),
+
+                       fluidRow(
+                         column(6,
+                                actionButton("select_all_groups", "✅ Sélectionner tous les groupes",
+                                             style = "background-color: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 4px; width: 100%;")
+                         ),
+                         column(6,
+                                actionButton("clear_all_groups", "❌ Tout désélectionner",
+                                             style = "background-color: #dc3545; color: white; border: none; padding: 8px 16px; border-radius: 4px; width: 100%;")
+                         )
+                       ),
+
+                       # Affichage du résumé de sélection
+                       div(id = "selection_summary",
+                           style = "margin-top: 10px; padding: 8px; background: #e8f4f8; border-radius: 4px; font-family: monospace; font-size: 12px;",
+                           textOutput("selection_summary_text")
+                       )
                    )
                  )
                ),
