@@ -579,7 +579,7 @@ server_clonage <- function(input, output, session) {
 
       if (file_info$exists) {
         if (is_server) {
-          # SERVEUR : Bouton de téléchargement simple
+          # SERVEUR : Bouton d'action (pas downloadButton)
           button_list[[i]] <- div(
             style = "margin-bottom: 8px; padding: 8px; background: #f8f9fa; border: 1px solid #28a745; border-radius: 4px;",
 
@@ -587,11 +587,11 @@ server_clonage <- function(input, output, session) {
                 div(style = "flex: 1;",
                     tags$strong(style = "color: #28a745;", "✅ ", ab1_name),
                     br(),
-                    tags$small(style = "color: #6c757d;", "Clic → Fenêtre d'ouverture/téléchargement")
+                    tags$small(style = "color: #6c757d;", "Clic → Fenêtre d'ouverture Firefox")
                 ),
                 div(style = "flex: 0 0 auto;",
-                    downloadButton(
-                      outputId = paste0("download_ab1_", i),
+                    actionButton(  # Changé de downloadButton à actionButton
+                      inputId = paste0("download_ab1_", i),
                       label = "📂 Ouvrir",
                       style = "background-color: #28a745; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 12px;",
                       title = paste0("Ouvrir ", ab1_name)
