@@ -356,29 +356,63 @@ server_clonage <- function(input, output, session) {
   })
 
   # Observer unique pour AB1 - VERSION CORRIGÉE
+
   observe({
     req(ab1_data$file_info)
     is_server <- !(.Platform$OS.type == "windows")
 
     if (is_server) {
-      # SERVEUR : Créer les downloadHandlers simples
+      # SERVEUR : Utiliser registerDataObj pour plus de contrôle
       lapply(seq_along(ab1_data$file_info), function(i) {
         file_info <- ab1_data$file_info[[i]]
 
         if (file_info$exists) {
-          output[[paste0("download_ab1_", i)]] <- downloadHandler(
-            filename = function() {
-              basename(file_info$ab1_file)
-            },
-            content = function(file) {
-              file.copy(file_info$ab1_file, file)
-            },
-            contentType = "application/x-abi"
-          )
+          observeEvent(input[[paste0("download_ab1_", i)]], {
+            file_path <- file_info$ab1_file
+            file_name <- basename(file_path)
+
+            # Créer une URL avec headers personnalisés
+            data_url <- session$registerDataObj(
+              name = paste0("ab1_", i, "_", as.integer(Sys.time())),
+              data = file_path,
+              filter = function(data, req) {
+                # Vérifier que le fichier existe
+                if (!file.exists(data)) {
+                  return(list(status = 404L, body = "File not found"))
+                }
+
+                # Lire le fichier
+                file_content <- readBin(data, "raw", file.info(data)$size)
+                file_name <- basename(data)
+
+                # Headers optimisés pour Firefox
+                return(list(
+                  status = 200L,
+                  headers = list(
+                    'Content-Type' = 'application/x-abi',
+                    'Content-Disposition' = paste0('attachment; filename="', file_name, '"'),
+                    'Content-Length' = as.character(length(file_content)),
+                    'X-Content-Type-Options' = 'nosniff',
+                    'Cache-Control' = 'no-cache, no-store, must-revalidate'
+                  ),
+                  body = file_content
+                ))
+              }
+            )
+
+            # Ouvrir dans un nouvel onglet
+            runjs(paste0("window.open('", data_url, "', '_blank');"))
+
+            showNotification(
+              paste0("📂 Ouverture de ", file_name, "..."),
+              type = "message", duration = 3
+            )
+
+          }, ignoreInit = TRUE, autoDestroy = TRUE)
         }
       })
     } else {
-      # LOCAL : Observers pour ouverture directe
+      # LOCAL : Observers pour ouverture directe (inchangé)
       lapply(seq_along(ab1_data$file_info), function(i) {
         file_info <- ab1_data$file_info[[i]]
 
