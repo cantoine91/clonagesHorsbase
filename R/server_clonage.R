@@ -373,7 +373,7 @@ server_clonage <- function(input, output, session) {
             content = function(file) {
               file.copy(file_info$ab1_file, file)
             },
-            contentType = "application/octet-stream"
+            contentType = "application/x-abi"
           )
         }
       })
