@@ -338,6 +338,107 @@ annotate_sequence_mutations <- function(pattern_sequence, subject_sequence) {
   return(paste(annotation, collapse = ""))
 }
 
+
+#' Création des cellules d'annotation avec surlignage des mutations (VERSION CORRIGÉE)
+#' @param annotation_chars Caractères d'annotation
+#' @param base_style Style CSS de base
+#' @param start_position Position de début
+#' @param sequence_type Type de séquence
+#' @return Vecteur de cellules HTML formatées avec surlignage des mutations
+create_annotation_cells_with_mutation_highlight <- function(annotation_chars, base_style, start_position = 1, sequence_type = "annotation") {
+  cells <- character()
+
+  # Trouver la première et dernière position avec '|'
+  match_positions <- which(annotation_chars == "|")
+
+  if (length(match_positions) > 0) {
+    first_match <- match_positions[1]
+    last_match <- match_positions[length(match_positions)]
+  } else {
+    # Si pas de '|', pas de surlignage
+    first_match <- 0
+    last_match <- 0
+  }
+
+  for (i in seq_along(annotation_chars)) {
+    style <- base_style
+
+    # Ajouter le fond rouge si :
+    # 1. On est dans la zone d'alignement (du premier au dernier '|')
+    # 2. ET le caractère n'est pas '|' (donc c'est une mutation)
+    if (first_match > 0 &&
+        i >= first_match &&
+        i <= last_match &&
+        annotation_chars[i] != "|") {
+      # Fond rouge pour les mutations
+      style <- paste0(style, " background-color: #ffcccc; border: 1px solid #ff9999; border-radius: 2px;")
+    }
+
+    # Créer la cellule
+    cells <- c(cells, paste0('<td style="', style, '">', annotation_chars[i], '</td>'))
+  }
+
+  return(cells)
+}
+
+#' Création d'un tableau HTML coloré pour un segment d'alignement (VERSION CORRIGÉE)
+#' @param subject_segment Segment de la séquence sujet
+#' @param pattern_segment Segment de la séquence pattern
+#' @param annotation_segment Segment d'annotation
+#' @param subject_start Position de début du sujet
+#' @param subject_end Position de fin du sujet
+#' @param pattern_start Position de début du pattern
+#' @param pattern_end Position de fin du pattern
+#' @param segment_colors Couleurs pour ce segment
+#' @param restriction_positions Positions des restrictions pour ce segment
+#' @return HTML du tableau formaté
+create_colored_alignment_table <- function(subject_segment, pattern_segment, annotation_segment,
+                                           subject_start, subject_end, pattern_start, pattern_end,
+                                           segment_colors, restriction_positions = NULL) {
+  # Décomposition en caractères
+  subject_chars <- strsplit(subject_segment, "")[[1]]
+  pattern_chars <- strsplit(pattern_segment, "")[[1]]
+  annotation_chars <- strsplit(annotation_segment, "")[[1]]
+
+  # Styles de base
+  base_cell_style <- "font-family: Courier New, monospace; text-align: center; padding: 0; margin: 0; border: 0; width: 1ch; min-width: 1ch; max-width: 1ch;"
+  prefix_style <- "font-family: Courier New, monospace; padding: 0; margin: 0; text-align: left; width: 100px; min-width: 100px; max-width: 100px; white-space: nowrap;"
+  suffix_style <- "font-family: Courier New, monospace; padding: 0 0 0 8px; margin: 0; text-align: left; width: 60px; min-width: 60px; max-width: 60px;"
+  table_style <- "border-collapse: collapse; margin: 10px 0; font-family: Courier New, monospace;"
+
+  # Création des cellules
+  subject_cells <- create_colored_sequence_cells(subject_chars, segment_colors, base_cell_style,
+                                                 restriction_positions, subject_start, "subject")
+
+  # UTILISATION DE LA FONCTION CORRIGÉE pour les annotations
+  annotation_cells <- create_annotation_cells_with_mutation_highlight(annotation_chars, base_cell_style, 1, "annotation")
+
+  pattern_cells <- create_sequence_cells(pattern_chars, base_cell_style, pattern_start, "pattern")
+
+  # Assemblage du tableau HTML
+  table_html <- paste0(
+    '<table style="', table_style, '">',
+    "<tr>",
+    '<td style="', prefix_style, '">Seq_1 ', sprintf("%6d", subject_start), " </td>",
+    paste(subject_cells, collapse = ""),
+    '<td style="', suffix_style, '">&nbsp;', subject_end, "</td>",
+    "</tr>",
+    "<tr>",
+    '<td style="', prefix_style, '"></td>',
+    paste(annotation_cells, collapse = ""),
+    '<td style="', suffix_style, '"></td>',
+    "</tr>",
+    "<tr>",
+    '<td style="', prefix_style, '">Seq_2 ', sprintf("%6d", pattern_start), " </td>",
+    paste(pattern_cells, collapse = ""),
+    '<td style="', suffix_style, '">&nbsp;', pattern_end, "</td>",
+    "</tr>",
+    "</table>"
+  )
+
+  return(table_html)
+}
+
 # ==============================================================================
 # PARSING DES FEATURES GENBANK
 # ==============================================================================
@@ -797,34 +898,58 @@ create_colored_sequence_cells <- function(sequence_chars, colors, base_style, re
   return(cells)
 }
 
-#' Création des cellules normales pour les séquences pattern et annotations
-#' @param sequence_chars Caractères de la séquence
-#' @param base_style Style CSS de base
-#' @param start_position Position de début dans la séquence
-#' @param sequence_type Type de séquence ("pattern" ou "annotation")
-#' @return Vecteur de cellules HTML formatées
+#' Version alternative simplifiée pour créer les cellules d'annotation
 create_sequence_cells <- function(sequence_chars, base_style, start_position = 1, sequence_type = "pattern") {
   cells <- character()
 
+  # Si c'est une annotation, appliquer le surlignage des mutations
+  if (sequence_type == "annotation") {
+    # Trouver la première et dernière position avec '|'
+    match_positions <- which(sequence_chars == "|")
+
+    if (length(match_positions) > 0) {
+      first_match <- match_positions[1]
+      last_match <- match_positions[length(match_positions)]
+    } else {
+      first_match <- 0
+      last_match <- 0
+    }
+
+    for (i in seq_along(sequence_chars)) {
+      style <- paste0(base_style, " position: relative; cursor: pointer;")
+
+      # Ajouter le fond rouge pour les mutations dans la zone d'alignement
+      if (first_match > 0 &&
+          i >= first_match &&
+          i <= last_match &&
+          sequence_chars[i] != "|") {
+        style <- paste0(style, " background-color: #ffcccc; border: 1px solid #ff9999; border-radius: 2px;")
+      }
+
+      cells <- c(cells, paste0('<td style="', style, '">', sequence_chars[i], '</td>'))
+    }
+
+    return(cells)
+  }
+
+  # Pour les séquences pattern normales
   for (i in seq_along(sequence_chars)) {
     style <- paste0(base_style, " position: relative; cursor: pointer;")
 
     # Gestion spécifique pour les séquences pattern
     if (sequence_type == "pattern") {
-      # Calcul de position en excluant les gaps - CORRECTION ICI
+      # Calcul de position en excluant les gaps
       if (i == 1) {
-        # Pour le premier caractère, utiliser start_position seulement si ce n'est pas un gap
         if (sequence_chars[i] == "-") {
-          real_position <- NA  # Pas de position pour un gap initial
+          real_position <- NA
         } else {
           real_position <- start_position
         }
       } else {
-        # Pour les autres caractères, compter les non-gaps précédents
         chars_before <- sequence_chars[1:(i-1)]
         non_gap_before <- sum(chars_before != "-")
         if (sequence_chars[i] == "-") {
-          real_position <- NA  # Pas de position pour un gap
+          real_position <- NA
         } else {
           real_position <- start_position + non_gap_before
         }
@@ -836,7 +961,6 @@ create_sequence_cells <- function(sequence_chars, base_style, start_position = 1
         tooltip_text <- paste0("Position: ", real_position, " | Nucléotide: ", sequence_chars[i], " (Séquence test)")
       }
     } else {
-      # Pour les annotations, pas de tooltip
       tooltip_text <- ""
     }
 

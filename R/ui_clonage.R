@@ -77,6 +77,51 @@ ui_clonage <- navbarPage(
         white-space: normal;
       }
 
+      /* ===== SURLIGNAGE DES MUTATIONS ===== */
+      .mutation-highlight {
+        background-color: #ffcccc !important;
+        border: 1px solid #ff9999 !important;
+        border-radius: 2px !important;
+      }
+
+      .mutation-zone {
+        background-color: #ffe6e6 !important;
+      }
+
+      /* ===== LÉGENDE POUR LES MUTATIONS ===== */
+      .mutation-legend {
+        background: #fff5f5;
+        border: 1px solid #ffcccc;
+        border-radius: 4px;
+        padding: 10px;
+        margin: 10px 0;
+        font-size: 12px;
+      }
+
+      .mutation-legend-item {
+        display: flex;
+        align-items: center;
+        margin: 5px 0;
+      }
+
+      .mutation-color-box {
+        width: 16px;
+        height: 16px;
+        margin-right: 8px;
+        border: 1px solid #ccc;
+        border-radius: 2px;
+      }
+
+      /* ===== AMÉLIORATION VISUELLE ===== */
+      .alignment-annotation-row {
+        background-color: #fafafa;
+      }
+
+      .alignment-annotation-row td {
+        border-top: 1px solid #f0f0f0;
+        border-bottom: 1px solid #f0f0f0;
+      }
+
       /* ===== INTERFACE DE RECHERCHE ===== */
       .search-container {
         background: #f8f9fa;
