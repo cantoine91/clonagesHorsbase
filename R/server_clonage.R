@@ -1,7 +1,5 @@
 # ==============================================================================
 # SERVER_CLONAGE.R
-# Logique serveur pour l'application Shiny HGX - Module Clonage
-# VERSION COMPLÈTE AVEC TOUTES LES FONCTIONS - ALIGNEMENT PDF CORRIGÉ
 # ==============================================================================
 
 library(shiny)
@@ -229,6 +227,7 @@ server_clonage <- function(input, output, session) {
     search_data$seq_files_paths <- character()
     search_data$file_groups <- list()  # Réinitialiser les groupes
 
+
     tryCatch({
       plate_folder <- search_ultra_fast(input$plate_keyword, seq_base_dir)
 
@@ -270,35 +269,34 @@ server_clonage <- function(input, output, session) {
   })
 
   # Gestion des boutons de sélection globale
-  observeEvent(search_data$file_groups, {
-    # Supprimer les anciens observers s'ils existent
-    # Créer de nouveaux observers pour chaque groupe
-    if (!is.null(search_data$file_groups) && length(search_data$file_groups) > 0) {
-      groups <- search_data$file_groups
+  # ✅ SOLUTION : Une seule fonction qui fait tout
 
-      # Créer les observers pour chaque groupe de manière dynamique
-      lapply(seq_along(groups), function(i) {
-        group_checkbox_id <- paste0("select_group_", i)
-        group_select_id <- paste0("seq_files_group_", i)
+  # Fonction helper centralisée
+  create_group_observers <- function(groups) {
+    lapply(seq_along(groups), function(i) {
+      local({
+        group_index <- i
+        group_data <- groups[[i]]
 
-        # Vérifier si l'input existe avant de créer l'observer
-        observeEvent(input[[group_checkbox_id]], {
-          if (!is.null(input[[group_checkbox_id]])) {
-            checkbox_value <- input[[group_checkbox_id]]
+        # Un seul observer par groupe
+        observeEvent(input[[paste0("select_group_", group_index)]], {
+          checkbox_value <- input[[paste0("select_group_", group_index)]]
+          group_select_id <- paste0("seq_files_group_", group_index)
 
-            if (isTRUE(checkbox_value)) {
-              # Sélectionner tous les fichiers du groupe
-              group_data <- groups[[i]]
-              if (!is.null(group_data$paths)) {
-                updateSelectInput(session, group_select_id, selected = group_data$paths)
-              }
-            } else if (isFALSE(checkbox_value)) {
-              # Désélectionner tous les fichiers du groupe
-              updateSelectInput(session, group_select_id, selected = character())
-            }
+          if (isTRUE(checkbox_value)) {
+            updateSelectInput(session, group_select_id, selected = group_data$paths)
+          } else {
+            updateSelectInput(session, group_select_id, selected = character())
           }
         }, ignoreInit = TRUE, ignoreNULL = TRUE)
       })
+    })
+  }
+
+  # Un seul observer principal
+  observeEvent(search_data$file_groups, {
+    if (!is.null(search_data$file_groups) && length(search_data$file_groups) > 0) {
+      create_group_observers(search_data$file_groups)
     }
   }, ignoreNULL = TRUE)
 
@@ -314,7 +312,7 @@ server_clonage <- function(input, output, session) {
     }
   })
 
-  # Gestion des boutons de sélection globale - VERSION CORRIGÉE
+  # Gestion des boutons de sélection globale
   observeEvent(input$select_all_groups, {
     if (!is.null(search_data$file_groups) && length(search_data$file_groups) > 0) {
       groups <- search_data$file_groups
@@ -329,40 +327,67 @@ server_clonage <- function(input, output, session) {
     }
   })
 
-  # Création dynamique des observers pour les checkboxes de groupe
+  # ==============================================================================
+  # GESTION DES FICHIERS AB1
+  # ==============================================================================
+
+  # Variable réactive pour stocker les fichiers AB1
+  ab1_data <- reactiveValues(
+    file_info = list(),
+    scanned = FALSE
+  )
+
+  # Scan automatique des fichiers AB1 quand la sélection change
   observe({
-    if (!is.null(search_data$file_groups) && length(search_data$file_groups) > 0) {
-      groups <- search_data$file_groups
+    selected_files <- get_all_selected_files()
 
-      # Pour chaque groupe, créer un observer séparé
-      for (i in seq_along(groups)) {
-        local({
-          group_index <- i
+    if (length(selected_files) > 0) {
+      # Utiliser la fonction du global_clonage.R
+      ab1_info <- find_corresponding_ab1_files(selected_files)
 
-          # Observer pour le checkbox du groupe
-          observeEvent(input[[paste0("select_group_", group_index)]], {
-            checkbox_value <- input[[paste0("select_group_", group_index)]]
-
-            if (!is.null(checkbox_value) && is.logical(checkbox_value)) {
-              group_select_id <- paste0("seq_files_group_", group_index)
-
-              if (checkbox_value == TRUE) {
-                # Sélectionner tous les fichiers du groupe
-                if (group_index <= length(groups)) {
-                  group_data <- groups[[group_index]]
-                  if (!is.null(group_data) && !is.null(group_data$paths)) {
-                    updateSelectInput(session, group_select_id, selected = group_data$paths)
-                  }
-                }
-              } else {
-                # Désélectionner tous les fichiers du groupe
-                updateSelectInput(session, group_select_id, selected = character())
-              }
-            }
-          }, ignoreInit = TRUE, ignoreNULL = TRUE)
-        })
-      }
+      # Stocker les informations
+      ab1_data$file_info <- ab1_info
+      ab1_data$scanned <- TRUE
+    } else {
+      # Réinitialiser si aucun fichier sélectionné
+      ab1_data$file_info <- list()
+      ab1_data$scanned <- FALSE
     }
+  })
+
+  # Création d'un observer unique pour tous les boutons AB1
+  observe({
+    req(ab1_data$file_info)
+
+    # Créer un observer pour chaque bouton, mais seulement une fois
+    lapply(seq_along(ab1_data$file_info), function(i) {
+      file_info <- ab1_data$file_info[[i]]
+
+      if (file_info$exists) {
+        # Utiliser observeEvent avec autoDestroy = TRUE
+        observeEvent(input[[paste0("open_ab1_", i)]], {
+          file_path <- file_info$ab1_file
+          file_name <- basename(file_path)
+
+          # Utiliser la fonction du global_clonage.R
+          success <- open_file_with_default_app(file_path)
+
+          if (success) {
+            showNotification(
+              paste0("📂 Ouverture de ", file_name, "..."),
+              type = "message",
+              duration = 3
+            )
+          } else {
+            showNotification(
+              paste0("❌ Impossible d'ouvrir ", file_name),
+              type = "error",
+              duration = 5
+            )
+          }
+        }, ignoreInit = TRUE, autoDestroy = TRUE)
+      }
+    })
   })
 
   # ==============================================================================
@@ -436,7 +461,7 @@ server_clonage <- function(input, output, session) {
             div(style = "clear: both;")
         ),
 
-        # Liste de sélection pour ce groupe - CORRECTION ICI
+        # Liste de sélection pour ce groupe
         selectInput(paste0("seq_files_group_", i),
                     label = NULL,
                     choices = choices_list,
@@ -482,6 +507,66 @@ server_clonage <- function(input, output, session) {
     } else {
       return(paste("📊 Total sélectionné:", length(selected_files), "fichier(s)"))
     }
+  })
+
+  # Interface dynamique pour les boutons AB1 individuels
+  output$ab1_buttons_ui <- renderUI({
+    req(ab1_data$scanned)
+
+    if (length(ab1_data$file_info) == 0) {
+      return(div(
+        style = "padding: 20px; text-align: center; color: #6c757d;",
+        "📝 Aucun fichier AB1 trouvé."
+      ))
+    }
+
+    button_list <- list()
+
+    for (i in seq_along(ab1_data$file_info)) {
+      file_info <- ab1_data$file_info[[i]]
+      ab1_name <- basename(file_info$ab1_file)
+
+      if (file_info$exists) {
+        # Fichier AB1 existe - bouton d'ouverture SEULEMENT
+        button_list[[i]] <- div(
+          style = "margin-bottom: 8px; padding: 8px; background: #f8f9fa; border: 1px solid #28a745; border-radius: 4px;",
+
+          div(style = "display: flex; justify-content: space-between; align-items: center;",
+              div(style = "flex: 1;",
+                  tags$strong(style = "color: #28a745;", "✅ ", ab1_name)
+              ),
+              div(style = "flex: 0 0 auto;",
+                  actionButton(
+                    inputId = paste0("open_ab1_", i),
+                    label = "📂 Ouvrir",
+                    style = "background-color: #28a745; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 12px;",
+                    title = paste0("Ouvrir ", ab1_name, " avec l'application par défaut")
+                  )
+              )
+          )
+        )
+      } else {
+        # Fichier AB1 manquant
+        button_list[[i]] <- div(
+          style = "margin-bottom: 8px; padding: 8px; background: #fff5f5; border: 1px solid #dc3545; border-radius: 4px;",
+
+          div(style = "display: flex; justify-content: space-between; align-items: center;",
+              div(style = "flex: 1;",
+                  tags$strong(style = "color: #dc3545;", "❌ ", ab1_name)
+              ),
+              div(style = "flex: 0 0 auto;",
+                  tags$button(
+                    "❌ Indisponible",
+                    style = "background-color: #6c757d; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 12px; cursor: not-allowed;",
+                    disabled = TRUE
+                  )
+              )
+          )
+        )
+      }
+    }
+
+    return(div(button_list))
   })
 
   # ==============================================================================
@@ -662,6 +747,18 @@ server_clonage <- function(input, output, session) {
 
       incProgress(0.1, detail = "Préparation des données...")
 
+      # Calcul des informations d'alignement pour la visualisation globale
+      alignments_info <- calculate_alignments_info(seqs(), data_xdna$seq)
+
+      # Génération de la visualisation globale
+      overview_viz <- generate_alignment_overview(
+        sequence_length = length(data_xdna$seq),
+        features_lines = data_xdna$features,
+        restriction_sites_list = restriction_sites(),
+        alignments_info = alignments_info,
+        selected_files = get_all_selected_files()
+      )
+
       # Calcul de la région d'affichage si demandé
       display_region <- if (input$show_restriction_context) {
         calculate_restriction_display_region(restriction_sites(), length(data_xdna$seq))
@@ -701,7 +798,6 @@ server_clonage <- function(input, output, session) {
       align_output <- character()
       text_output <- character()
 
-      # CORRECTION : Utiliser get_all_selected_files() au lieu de input$seq_files
       selected_files_paths <- get_all_selected_files()
 
       total_seqs <- length(seqs())
@@ -760,7 +856,7 @@ server_clonage <- function(input, output, session) {
           region_info_text <- paste0(" (région alignée: ", aln_start, "-", aln_end, ")")
         }
 
-        # CORRECTION : Nom d'affichage du fichier
+        # Nom d'affichage du fichier
         file_display_name <- if (!is.null(selected_files_paths) && i <= length(selected_files_paths)) {
           basename(selected_files_paths[i])
         } else {
@@ -786,17 +882,23 @@ server_clonage <- function(input, output, session) {
       alignment_data$results <- align_output
       alignment_data$text_version <- paste(text_output, collapse = "")
 
-      # Structure HTML finale avec légende et alignements côte à côte
+      # Structure HTML finale avec visualisation globale + alignements détaillés
       tags$div(
-        id = "align_results",
-        class = "results-container",
+        # Visualisation globale en haut
+        HTML(overview_viz),
+
+        # Alignements détaillés en bas
         tags$div(
-          class = "legend-container",
-          HTML(legend_content)
-        ),
-        tags$div(
-          class = "alignments-container",
-          HTML(paste(align_output, collapse = ""))
+          id = "align_results",
+          class = "results-container",
+          tags$div(
+            class = "legend-container",
+            HTML(legend_content)
+          ),
+          tags$div(
+            class = "alignments-container",
+            HTML(paste(align_output, collapse = ""))
+          )
         )
       )
     })

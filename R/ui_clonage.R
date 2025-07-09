@@ -1,8 +1,5 @@
 # ==============================================================================
 # UI_CLONAGE.R
-# Interface utilisateur pour l'application Shiny HGX - Module Clonage
-# Interface de recherche et alignement de séquences ADN
-# VERSION MISE À JOUR - BOUTON HTML SEULEMENT
 # ==============================================================================
 
 library(shiny)
@@ -82,44 +79,6 @@ ui_clonage <- navbarPage(
         background-color: #ffcccc !important;
         border: 1px solid #ff9999 !important;
         border-radius: 2px !important;
-      }
-
-      .mutation-zone {
-        background-color: #ffe6e6 !important;
-      }
-
-      /* ===== LÉGENDE POUR LES MUTATIONS ===== */
-      .mutation-legend {
-        background: #fff5f5;
-        border: 1px solid #ffcccc;
-        border-radius: 4px;
-        padding: 10px;
-        margin: 10px 0;
-        font-size: 12px;
-      }
-
-      .mutation-legend-item {
-        display: flex;
-        align-items: center;
-        margin: 5px 0;
-      }
-
-      .mutation-color-box {
-        width: 16px;
-        height: 16px;
-        margin-right: 8px;
-        border: 1px solid #ccc;
-        border-radius: 2px;
-      }
-
-      /* ===== AMÉLIORATION VISUELLE ===== */
-      .alignment-annotation-row {
-        background-color: #fafafa;
-      }
-
-      .alignment-annotation-row td {
-        border-top: 1px solid #f0f0f0;
-        border-bottom: 1px solid #f0f0f0;
       }
 
       /* ===== INTERFACE DE RECHERCHE ===== */
@@ -230,16 +189,6 @@ ui_clonage <- navbarPage(
         100% { transform: rotate(360deg); }
       }
 
-      .progress-container {
-        animation: pulse 2s infinite;
-      }
-
-      @keyframes pulse {
-        0% { background-color: #f0f0f0; }
-        50% { background-color: #e8f4f8; }
-        100% { background-color: #f0f0f0; }
-      }
-
       /* ===== TOOLTIPS POUR NUCLÉOTIDES ===== */
       .nucleotide-cell {
         position: relative;
@@ -295,40 +244,63 @@ ui_clonage <- navbarPage(
     # JAVASCRIPT POUR INTERACTIONS
     # ==============================================================================
     tags$script(HTML("
-      // Gestion de l'interface de recherche
+      // Configuration centralisée
+      const buttonConfig = {
+        '#search_seq_btn': {
+          processing: {
+            class: 'btn-searching',
+            text: '🔍 Recherche...',
+            showStop: true
+          },
+          reset: {
+            class: '',
+            text: '🔍 Rechercher',
+            showStop: false
+          }
+        },
+        '#align_btn': {
+          processing: {
+            class: 'align-btn-processing',
+            text: '<span class=\"alignment-spinner\"></span>⏳ Alignement en cours...'
+          },
+          reset: {
+            class: '',
+            text: '🔬 Lancer l\\'alignement'
+          }
+        }
+      };
+
+      // Fonction générique
+      function setButtonState(buttonId, state) {
+        const button = $(buttonId);
+        button.removeClass().addClass(state.class || '');
+        button.html(state.text);
+        button.prop('disabled', state.disabled || false);
+
+        if (state.showStop) {
+          $('.stop-search-btn').show();
+        }
+      }
+
+      // Gestionnaires d'événements simplifiés
       $(document).on('click', '#search_seq_btn', function() {
-        $('.stop-search-btn').show();
-        $(this).prop('disabled', true);
+        setButtonState('#search_seq_btn', buttonConfig['#search_seq_btn'].processing);
       });
 
-      $(document).on('click', '#stop_search_btn', function() {
-        $('.stop-search-btn').hide();
-        $('#search_seq_btn').prop('disabled', false);
-        Shiny.setInputValue('stop_search', Math.random());
+      $(document).on('click', '#align_btn', function() {
+        setButtonState('#align_btn', buttonConfig['#align_btn'].processing);
       });
 
-      // Réactivation automatique du bouton de recherche
+      // Gestionnaire unifié des réponses Shiny
       $(document).on('shiny:value', function(event) {
         if (event.name === 'search_in_progress' && event.value === false) {
+          setButtonState('#search_seq_btn', buttonConfig['#search_seq_btn'].reset);
           $('.stop-search-btn').hide();
-          $('#search_seq_btn').prop('disabled', false);
         }
-      });
 
-      // Gestion de l'état du bouton d'alignement
-      $(document).on('click', '#align_btn', function() {
-        $(this).addClass('align-btn-processing');
-        $(this).html('<span class=\"alignment-spinner\"></span>⏳ Alignement en cours...');
-        $(this).prop('disabled', true);
-      });
-
-      // Réactivation automatique du bouton après alignement
-      $(document).on('shiny:value', function(event) {
         if (event.name === 'alignment_complete' && event.value === true) {
-          setTimeout(function() {
-            $('#align_btn').removeClass('align-btn-processing');
-            $('#align_btn').html('🔬 Lancer l\\'alignement');
-            $('#align_btn').prop('disabled', false);
+          setTimeout(() => {
+            setButtonState('#align_btn', buttonConfig['#align_btn'].reset);
           }, 1000);
         }
       });
@@ -462,7 +434,7 @@ ui_clonage <- navbarPage(
                      textOutput("restriction_info")
                  ),
 
-                 # NOUVEAU : Option d'affichage centré sur les sites de restriction
+                 # Option d'affichage centré sur les sites de restriction
                  div(style = "margin-top: 15px; padding: 10px; background: #f1f3f4; border-radius: 4px;",
                      h5("⚙️ Options d'affichage", style = "color: #b22222; margin-top: 0; margin-bottom: 10px;"),
 
@@ -484,6 +456,19 @@ ui_clonage <- navbarPage(
                        div(style = "margin-top: 5px; padding: 5px; background: #fff3cd; border-left: 3px solid #ffc107; font-size: 12px;",
                            "ℹ️ L'alignement affichera la séquence complète de référence.")
                      )
+                 )
+               ),
+
+               # ==============================================================================
+               # SECTION FICHIERS AB1
+               # ==============================================================================
+               conditionalPanel(
+                 condition = "output.seq_files_found",
+                 wellPanel(
+                   h4("📊 Fichiers AB1 correspondants", style = "color: #28a745; margin-top: 0;"),
+
+                   # Zone d'affichage des boutons AB1 individuels (sans bouton de recherche)
+                   uiOutput("ab1_buttons_ui")
                  )
                ),
 
@@ -517,7 +502,7 @@ ui_clonage <- navbarPage(
                ),
 
                # ==============================================================================
-               # SECTION INFORMATIONS (VERSION COMPACTE)
+               # SECTION INFORMATIONS
                # ==============================================================================
                wellPanel(
                  h4("📊 Informations", style = "color: #b22222; margin-top: 0; margin-bottom: 10px;"),

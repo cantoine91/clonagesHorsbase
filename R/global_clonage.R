@@ -1,10 +1,36 @@
 # ==============================================================================
 # GLOBAL_CLONAGE.R
-# Fonctions utilitaires pour l'analyse de séquences et l'alignement
-# Application Shiny HGX - Module Clonage - VERSION CORRIGÉE ESPACEMENT
 # ==============================================================================
 
 library(Biostrings)
+
+# ==============================================================================
+# CONSTANTES GLOBALES
+# ==============================================================================
+
+# Couleurs pour les sites de restriction
+RESTRICTION_COLORS <- c("#FF0000", "#0000FF", "#00FF00", "#FF8000", "#8000FF", "#00FFFF")
+
+# Couleurs pour les clones dans la visualisation
+CLONE_COLORS <- c("#28a745", "#17a2b8", "#ffc107", "#dc3545", "#6f42c1", "#fd7e14")
+
+# Paramètres de configuration
+CONFIG_DEFAULTS <- list(
+  line_length = 60,          # Longueur des lignes d'alignement
+  context_length = 200,      # Contexte autour des sites de restriction
+  svg_width = 800,           # Largeur fixe du SVG
+  svg_ruler_margin = 160,    # Marge pour les labels du SVG
+  font_size_svg = 10,        # Taille de police dans le SVG
+  font_size_tooltip = 11     # Taille de police des tooltips
+)
+
+# Styles CSS réutilisés
+CSS_STYLES <- list(
+  base_cell = "font-family: Courier New, monospace; text-align: center; padding: 0; margin: 0; border: 0; width: 1ch; min-width: 1ch; max-width: 1ch;",
+  prefix = "font-family: Courier New, monospace; padding: 0; margin: 0; text-align: left; width: 100px; min-width: 100px; max-width: 100px; white-space: nowrap;",
+  suffix = "font-family: Courier New, monospace; padding: 0 0 0 8px; margin: 0; text-align: left; width: 60px; min-width: 60px; max-width: 60px;",
+  table = "border-collapse: collapse; margin: 10px 0; font-family: Courier New, monospace;"
+)
 
 # ==============================================================================
 # FONCTIONS UTILITAIRES GÉNÉRALES
@@ -16,40 +42,6 @@ library(Biostrings)
 clean_sequence <- function(sequence_text) {
   sequence_text <- gsub("[\r\n ]", "", sequence_text)
   toupper(sequence_text)
-}
-
-#' Validation de l'existence d'un répertoire
-#' @param path Chemin du répertoire à valider
-#' @return TRUE si le répertoire existe, FALSE sinon
-validate_directory <- function(path) {
-  return(dir.exists(path))
-}
-
-#' Nettoyage et validation des mots-clés de recherche
-#' @param keyword Mot-clé à nettoyer
-#' @return Mot-clé nettoyé sans espaces de début/fin
-clean_search_keyword <- function(keyword) {
-  if (is.null(keyword)) return("")
-  trimws(keyword)
-}
-
-#' Formatage des résultats de recherche pour affichage
-#' @param folders Vecteur des dossiers trouvés
-#' @param files Vecteur des fichiers trouvés
-#' @return Chaîne formatée décrivant les résultats
-format_search_results <- function(folders, files) {
-  if (length(folders) == 0) {
-    return("Aucun résultat trouvé")
-  }
-
-  result <- paste("Dossiers trouvés:", length(folders), "\n")
-  if (length(files) > 0) {
-    result <- paste0(result, "Fichiers .seq trouvés:", length(files))
-  } else {
-    result <- paste0(result, "Aucun fichier .seq correspondant")
-  }
-
-  return(result)
 }
 
 #' Calcul de la région d'affichage basée sur les sites de restriction
@@ -223,8 +215,7 @@ build_restriction_position_map <- function(sequence_length, restriction_sites, a
   return(is_restriction)
 }
 
-
-#' Génération de la légende HTML pour les sites de restriction (mise à jour)
+#' Génération de la légende HTML pour les sites de restriction
 #' @param restriction_sites_list Liste des sites de restriction
 #' @return HTML formaté pour la légende des sites de restriction
 generate_restriction_legend_formatted <- function(restriction_sites_list) {
@@ -232,7 +223,7 @@ generate_restriction_legend_formatted <- function(restriction_sites_list) {
     return("")
   }
 
-  colors <- c("#FF0000", "#0000FF", "#00FF00", "#FF8000", "#8000FF", "#00FFFF")
+  colors <- RESTRICTION_COLORS
   legend_items <- character()
 
   site_index <- 1
@@ -339,7 +330,7 @@ annotate_sequence_mutations <- function(pattern_sequence, subject_sequence) {
 }
 
 
-#' Création des cellules d'annotation avec surlignage des mutations (VERSION CORRIGÉE)
+#' Création des cellules d'annotation avec surlignage des mutations
 #' @param annotation_chars Caractères d'annotation
 #' @param base_style Style CSS de base
 #' @param start_position Position de début
@@ -381,64 +372,6 @@ create_annotation_cells_with_mutation_highlight <- function(annotation_chars, ba
   return(cells)
 }
 
-#' Création d'un tableau HTML coloré pour un segment d'alignement (VERSION CORRIGÉE)
-#' @param subject_segment Segment de la séquence sujet
-#' @param pattern_segment Segment de la séquence pattern
-#' @param annotation_segment Segment d'annotation
-#' @param subject_start Position de début du sujet
-#' @param subject_end Position de fin du sujet
-#' @param pattern_start Position de début du pattern
-#' @param pattern_end Position de fin du pattern
-#' @param segment_colors Couleurs pour ce segment
-#' @param restriction_positions Positions des restrictions pour ce segment
-#' @return HTML du tableau formaté
-create_colored_alignment_table <- function(subject_segment, pattern_segment, annotation_segment,
-                                           subject_start, subject_end, pattern_start, pattern_end,
-                                           segment_colors, restriction_positions = NULL) {
-  # Décomposition en caractères
-  subject_chars <- strsplit(subject_segment, "")[[1]]
-  pattern_chars <- strsplit(pattern_segment, "")[[1]]
-  annotation_chars <- strsplit(annotation_segment, "")[[1]]
-
-  # Styles de base
-  base_cell_style <- "font-family: Courier New, monospace; text-align: center; padding: 0; margin: 0; border: 0; width: 1ch; min-width: 1ch; max-width: 1ch;"
-  prefix_style <- "font-family: Courier New, monospace; padding: 0; margin: 0; text-align: left; width: 100px; min-width: 100px; max-width: 100px; white-space: nowrap;"
-  suffix_style <- "font-family: Courier New, monospace; padding: 0 0 0 8px; margin: 0; text-align: left; width: 60px; min-width: 60px; max-width: 60px;"
-  table_style <- "border-collapse: collapse; margin: 10px 0; font-family: Courier New, monospace;"
-
-  # Création des cellules
-  subject_cells <- create_colored_sequence_cells(subject_chars, segment_colors, base_cell_style,
-                                                 restriction_positions, subject_start, "subject")
-
-  # UTILISATION DE LA FONCTION CORRIGÉE pour les annotations
-  annotation_cells <- create_annotation_cells_with_mutation_highlight(annotation_chars, base_cell_style, 1, "annotation")
-
-  pattern_cells <- create_sequence_cells(pattern_chars, base_cell_style, pattern_start, "pattern")
-
-  # Assemblage du tableau HTML
-  table_html <- paste0(
-    '<table style="', table_style, '">',
-    "<tr>",
-    '<td style="', prefix_style, '">Seq_1 ', sprintf("%6d", subject_start), " </td>",
-    paste(subject_cells, collapse = ""),
-    '<td style="', suffix_style, '">&nbsp;', subject_end, "</td>",
-    "</tr>",
-    "<tr>",
-    '<td style="', prefix_style, '"></td>',
-    paste(annotation_cells, collapse = ""),
-    '<td style="', suffix_style, '"></td>',
-    "</tr>",
-    "<tr>",
-    '<td style="', prefix_style, '">Seq_2 ', sprintf("%6d", pattern_start), " </td>",
-    paste(pattern_cells, collapse = ""),
-    '<td style="', suffix_style, '">&nbsp;', pattern_end, "</td>",
-    "</tr>",
-    "</table>"
-  )
-
-  return(table_html)
-}
-
 # ==============================================================================
 # PARSING DES FEATURES GENBANK
 # ==============================================================================
@@ -459,7 +392,7 @@ extract_serialcloner_color <- function(feature_lines) {
   return("#000000")
 }
 
-#' Parsing des features GenBank de manière robuste
+#' Parsing des features GenBank
 #' @param features_lines Lignes contenant les features du fichier GenBank
 #' @return Liste des features parsées avec type, position, couleur et nom
 parse_genbank_features <- function(features_lines) {
@@ -706,6 +639,78 @@ generate_color_legend <- function(features_lines, restriction_sites_list = NULL)
 }
 
 # ==============================================================================
+# FONCTIONS POUR OUVRIR LES FICHIERS AB1
+# ==============================================================================
+
+#' Ouverture d'un fichier avec l'application par défaut du système
+#' @param file_path Chemin complet vers le fichier à ouvrir
+#' @return TRUE si succès, FALSE sinon
+open_file_with_default_app <- function(file_path) {
+  if (!file.exists(file_path)) {
+    return(FALSE)
+  }
+
+  tryCatch({
+    if (.Platform$OS.type == "windows") {
+      # Windows
+      shell.exec(file_path)
+    } else if (Sys.info()["sysname"] == "Darwin") {
+      # macOS
+      system(paste("open", shQuote(file_path)))
+    } else {
+      # Linux
+      system(paste("xdg-open", shQuote(file_path)))
+    }
+    return(TRUE)
+  }, error = function(e) {
+    return(FALSE)
+  })
+}
+
+#' Recherche des fichiers AB1 correspondants aux fichiers .seq
+#' @param seq_files_paths Vecteur des chemins des fichiers .seq
+#' @return Liste des informations sur les fichiers AB1
+find_corresponding_ab1_files <- function(seq_files_paths) {
+  ab1_info <- list()
+
+  for (seq_file in seq_files_paths) {
+    # Convertir .seq en .ab1
+    ab1_file <- gsub("\\.seq$", ".ab1", seq_file, ignore.case = TRUE)
+
+    # Vérifier si le fichier AB1 existe
+    if (file.exists(ab1_file)) {
+      ab1_info[[length(ab1_info) + 1]] <- list(
+        seq_file = seq_file,
+        ab1_file = ab1_file,
+        exists = TRUE,
+        size = file.info(ab1_file)$size
+      )
+    } else {
+      # Essayer avec une casse différente
+      ab1_file_upper <- gsub("\\.seq$", ".AB1", seq_file, ignore.case = TRUE)
+      if (file.exists(ab1_file_upper)) {
+        ab1_info[[length(ab1_info) + 1]] <- list(
+          seq_file = seq_file,
+          ab1_file = ab1_file_upper,
+          exists = TRUE,
+          size = file.info(ab1_file_upper)$size
+        )
+      } else {
+        # Fichier AB1 non trouvé
+        ab1_info[[length(ab1_info) + 1]] <- list(
+          seq_file = seq_file,
+          ab1_file = ab1_file,
+          exists = FALSE,
+          size = 0
+        )
+      }
+    }
+  }
+
+  return(ab1_info)
+}
+
+# ==============================================================================
 # GÉNÉRATION DES ALIGNEMENTS HTML
 # ==============================================================================
 
@@ -720,7 +725,7 @@ generate_color_legend <- function(features_lines, restriction_sites_list = NULL)
 #' @return Liste avec versions HTML et texte de l'alignement
 generate_colored_alignment <- function(pattern_seq, subject_seq, annotation_seq, start_position,
                                        colors, filename, restriction_positions = NULL) {
-  line_length <- 60
+  line_length <- CONFIG_DEFAULTS$line_length
   sequence_length <- nchar(subject_seq)
 
   html_lines <- character()
@@ -744,7 +749,6 @@ generate_colored_alignment <- function(pattern_seq, subject_seq, annotation_seq,
     subject_start <- start
     subject_end <- end
 
-    # CORRECTION: Calcul correct des positions pour le pattern
     # Compter les nucléotides réels (non-gap) avant ce segment
     pattern_before_segment <- substr(pattern_seq, 1, start - 1)
     pattern_bases_before <- nchar(gsub("-", "", pattern_before_segment))
@@ -784,7 +788,7 @@ generate_colored_alignment <- function(pattern_seq, subject_seq, annotation_seq,
 
     html_lines <- c(html_lines, alignment_table)
 
-    # Version texte - CORRECTION ESPACEMENT
+    # Version texte
     text_lines <- c(text_lines, "")
     text_lines <- c(text_lines, sprintf("Seq_1 %6d %s %d", subject_start, subject_segment, subject_end))
     text_lines <- c(text_lines, sprintf("       %s", annotation_segment))
@@ -819,7 +823,7 @@ create_colored_alignment_table <- function(subject_segment, pattern_segment, ann
   annotation_chars <- strsplit(annotation_segment, "")[[1]]
 
   # Styles de base
-  base_cell_style <- "font-family: Courier New, monospace; text-align: center; padding: 0; margin: 0; border: 0; width: 1ch; min-width: 1ch; max-width: 1ch;"
+  base_cell_style <- CSS_STYLES$base_cell
   prefix_style <- "font-family: Courier New, monospace; padding: 0; margin: 0; text-align: left; width: 100px; min-width: 100px; max-width: 100px; white-space: nowrap;"
   suffix_style <- "font-family: Courier New, monospace; padding: 0 0 0 8px; margin: 0; text-align: left; width: 60px; min-width: 60px; max-width: 60px;"
   table_style <- "border-collapse: collapse; margin: 10px 0; font-family: Courier New, monospace;"
@@ -830,7 +834,7 @@ create_colored_alignment_table <- function(subject_segment, pattern_segment, ann
   annotation_cells <- create_sequence_cells(annotation_chars, base_cell_style, 1, "annotation")
   pattern_cells <- create_sequence_cells(pattern_chars, base_cell_style, pattern_start, "pattern")
 
-  # Assemblage du tableau HTML - CORRECTION ESPACEMENT FORCÉ
+  # Assemblage du tableau HTML
   table_html <- paste0(
     '<table style="', table_style, '">',
     "<tr>",
@@ -898,7 +902,7 @@ create_colored_sequence_cells <- function(sequence_chars, colors, base_style, re
   return(cells)
 }
 
-#' Version alternative simplifiée pour créer les cellules d'annotation
+#' créer les cellules d'annotation
 create_sequence_cells <- function(sequence_chars, base_style, start_position = 1, sequence_type = "pattern") {
   cells <- character()
 
@@ -1022,7 +1026,7 @@ extract_clone_group <- function(filename) {
   }
 }
 
-#' Organisation des fichiers par groupes - VERSION SIMPLIFIÉE
+#' Organisation des fichiers par groupes
 #' @param file_paths Vecteur des chemins complets des fichiers
 #' @param file_names Vecteur des noms d'affichage
 #' @return Liste organisée par groupes
@@ -1055,4 +1059,268 @@ organize_files_by_groups <- function(file_paths, file_names) {
   }
 
   return(groups)
+}
+
+# ==============================================================================
+# EXTRACTION DU NOM DU PUIT
+# ==============================================================================
+
+#' Version alternative : Groupe + Puit
+#' @param file_name Nom complet du fichier
+#' @return Groupe_Puit
+extract_group_and_well <- function(file_name) {
+  # Enlever l'extension
+  base_name <- gsub("\\.(seq|ab1)$", "", file_name, ignore.case = TRUE)
+
+  # Séparer par underscore
+  parts <- strsplit(base_name, "_")[[1]]
+
+  # Prendre simplement les parties 3 et 7 (B09 et A-1)
+  if (length(parts) >= 7) {
+    well <- parts[3]   # B09
+    group <- parts[7]  # A-1
+    return(paste0(group, "_", well))
+  } else if (length(parts) >= 3) {
+    return(parts[3])  # Juste le puit
+  } else {
+    return(substr(base_name, 1, 15))
+  }
+}
+
+# ==============================================================================
+# VISUALISATION GLOBALE DES ALIGNEMENTS AVEC RECTANGLES
+# ==============================================================================
+
+#' Génération de la visualisation globale des alignements
+#' @param sequence_length Longueur de la séquence de référence
+#' @param features_lines Lignes des features GenBank
+#' @param restriction_sites_list Liste des sites de restriction
+#' @param alignments_info Liste des informations d'alignements
+#' @param selected_files Noms des fichiers sélectionnés
+#' @return HTML de la visualisation globale
+generate_alignment_overview <- function(sequence_length, features_lines, restriction_sites_list, alignments_info, selected_files) {
+
+  # DIMENSIONS FIXES EN PIXELS
+  viz_width <- CONFIG_DEFAULTS$svg_width
+  viz_height <- 50 + (length(alignments_info) * 25) + 100
+
+  svg_content <- paste0(
+    '<div style="background: #f8f9fa; padding: 15px; border-radius: 5px; border: 1px solid #dee2e6; margin: 20px 0; width: 100%; overflow-x: auto;">',
+    '<h4 style="color: #b22222; margin-top: 0;">📊 Vue d\'ensemble des alignements</h4>',
+    '<svg width="', viz_width, '" height="', viz_height, '" style="background: white; border: 1px solid #ccc; min-width: 800px;">',
+
+    # Ligne de référence (séquence complète) - COORDONNÉES FIXES
+    '<rect x="80" y="20" width="', (viz_width - 160), '" height="8" fill="#e9ecef" stroke="#adb5bd" stroke-width="1"/>',
+    '<text x="75" y="32" font-family="Arial" font-size="12" text-anchor="end" fill="#495057">Référence</text>',
+
+    # Génération des éléments avec coordonnées fixes
+    generate_scale_ruler_fixed(viz_width, sequence_length),
+    generate_features_rectangles_fixed(features_lines, viz_width, sequence_length),
+    generate_restriction_sites_viz_fixed(restriction_sites_list, viz_width, sequence_length)
+  )
+
+  # Alignements individuels
+  for (i in seq_along(alignments_info)) {
+    alignment <- alignments_info[[i]]
+    file_name <- if (i <= length(selected_files)) basename(selected_files[i]) else paste0("Clone_", i)
+    y_position <- 50 + (i * 25)
+    svg_content <- paste0(svg_content, generate_alignment_rectangle_fixed(alignment, file_name, y_position, viz_width, sequence_length, i))
+  }
+
+  svg_content <- paste0(svg_content, '</svg></div>')
+  return(svg_content)
+}
+
+#' Génération de la règle graduée (VERSION FIXE)
+#' @param viz_width Largeur de la visualisation
+#' @param sequence_length Longueur de la séquence
+#' @return HTML SVG de la règle
+generate_scale_ruler_fixed <- function(viz_width, sequence_length) {
+  ruler_html <- ""
+  step <- calculate_ruler_step(sequence_length)
+  ruler_width <- viz_width - 160  # Espace pour les labels
+
+  for (pos in seq(0, sequence_length, by = step)) {
+    x_pos <- 80 + (pos / sequence_length) * ruler_width
+    ruler_html <- paste0(ruler_html,
+                         '<line x1="', x_pos, '" y1="28" x2="', x_pos, '" y2="35" stroke="#6c757d" stroke-width="1"/>',
+                         '<text x="', x_pos, '" y="45" font-family="Arial" font-size="10" text-anchor="middle" fill="#6c757d">',
+                         format(pos, big.mark = ","), '</text>')
+  }
+  return(ruler_html)
+}
+
+#' Calcul du pas de graduation optimal
+#' @param sequence_length Longueur de la séquence
+#' @return Pas de graduation
+calculate_ruler_step <- function(sequence_length) {
+  if (sequence_length <= 1000) return(100)
+  if (sequence_length <= 5000) return(500)
+  if (sequence_length <= 10000) return(1000)
+  if (sequence_length <= 50000) return(5000)
+  return(10000)
+}
+
+#' Génération des rectangles pour les features GenBank (VERSION FIXE)
+#' @param features_lines Lignes des features
+#' @param viz_width Largeur de la visualisation
+#' @param sequence_length Longueur de la séquence
+#' @return HTML SVG des features
+generate_features_rectangles_fixed <- function(features_lines, viz_width, sequence_length) {
+  features_list <- parse_genbank_features(features_lines)
+  features_html <- ""
+  ruler_width <- viz_width - 160
+
+  for (feature in features_list) {
+    position_string <- feature$position_raw
+    if (is.na(position_string)) next
+
+    position_bounds <- as.numeric(unlist(strsplit(position_string, "\\.\\.")))
+    if (length(position_bounds) != 2) next
+
+    start_pos <- position_bounds[1]
+    end_pos <- position_bounds[2]
+
+    # COORDONNÉES FIXES
+    x_start <- calculate_svg_x_position(start_pos, sequence_length, viz_width)
+    x_width <- ((end_pos - start_pos + 1) / sequence_length) * ruler_width
+
+    color <- feature$color
+    if (color == "#000000") {
+      color <- get_color_by_feature_name(feature$name)
+    }
+
+    display_name <- if (feature$name != "") feature$name else paste("Feature", feature$type)
+
+    features_html <- paste0(features_html,
+                            '<rect x="', x_start, '" y="12" width="', max(x_width, 2), '" height="4" fill="', color, '" opacity="0.8">',
+                            '<title>', display_name, ' (', start_pos, '-', end_pos, ')</title>',
+                            '</rect>')
+  }
+  return(features_html)
+}
+
+#' Génération des sites de restriction (VERSION FIXE)
+#' @param restriction_sites_list Liste des sites de restriction
+#' @param viz_width Largeur de la visualisation
+#' @param sequence_length Longueur de la séquence
+#' @return HTML SVG des sites de restriction
+generate_restriction_sites_viz_fixed <- function(restriction_sites_list, viz_width, sequence_length) {
+  if (length(restriction_sites_list) == 0) return("")
+
+  sites_html <- ""
+  colors <- c("#FF0000", "#0000FF", "#00FF00", "#FF8000", "#8000FF", "#00FFFF")
+  site_index <- 1
+  ruler_width <- viz_width - 160
+
+  for (enzyme_name in names(restriction_sites_list)) {
+    sites <- restriction_sites_list[[enzyme_name]]
+    if (length(sites) == 0) next
+
+    color <- colors[((site_index - 1) %% length(colors)) + 1]
+
+    for (site_pos in sites) {
+      x_pos <- 80 + (site_pos / sequence_length) * ruler_width
+      sites_html <- paste0(sites_html,
+                           '<line x1="', x_pos, '" y1="8" x2="', x_pos, '" y2="32" stroke="', color, '" stroke-width="2" opacity="0.8">',
+                           '<title>', enzyme_name, ' - Position: ', site_pos, '</title>',
+                           '</line>')
+    }
+    site_index <- site_index + 1
+  }
+  return(sites_html)
+}
+
+#' Génération du rectangle d'alignement pour un clone (VERSION FIXE)
+#' @param alignment Information d'alignement
+#' @param file_name Nom du fichier
+#' @param y_position Position Y
+#' @param viz_width Largeur de la visualisation
+#' @param sequence_length Longueur de la séquence
+#' @param index Index du clone
+#' @return HTML SVG du rectangle d'alignement
+generate_alignment_rectangle_fixed <- function(alignment, file_name, y_position, viz_width, sequence_length, index) {
+
+  ruler_width <- viz_width - 160
+
+  # COORDONNÉES FIXES
+  x_start <- calculate_svg_x_position(alignment$start, sequence_length, viz_width)
+  x_width <- ((alignment$end - alignment$start + 1) / sequence_length) * ruler_width
+
+  clone_colors <- CLONE_COLORS
+  color <- clone_colors[((index - 1) %% length(clone_colors)) + 1]
+
+  identity_percent <- round(alignment$identity * 100, 1)
+  opacity <- 0.3 + (alignment$identity * 0.7)
+
+  alignment_html <- paste0(
+    '<rect x="', x_start, '" y="', y_position, '" width="', max(x_width, 2), '" height="8" ',
+    'fill="', color, '" opacity="', opacity, '" stroke="', color, '" stroke-width="1">',
+    '<title>', file_name, ' - ', alignment$start, '-', alignment$end, ' (', identity_percent, '% identité)</title>',
+    '</rect>',
+    '<text x="75" y="', y_position + 6, '" font-family="Arial" font-size="11" text-anchor="end" fill="#495057">',
+    extract_group_and_well(file_name), '</text>',
+    '<text x="', x_start + x_width + 5, '" y="', y_position + 6, '" font-family="Arial" font-size="10" fill="#6c757d">',
+    identity_percent, '%</text>')
+
+  return(alignment_html)
+}
+
+#' Calcul des informations d'alignement pour la visualisation
+#' @param seqs_list Liste des séquences
+#' @param reference_seq Séquence de référence
+#' @return Liste des informations d'alignement
+calculate_alignments_info <- function(seqs_list, reference_seq) {
+  alignments_info <- list()
+
+  for (i in seq_along(seqs_list)) {
+    # Alignement par paires
+    aln <- Biostrings::pairwiseAlignment(
+      pattern = seqs_list[[i]],
+      subject = reference_seq,
+      type = "local",
+      substitutionMatrix = nucleotideSubstitutionMatrix(match = 2, mismatch = -1),
+      gapOpening = -2,
+      gapExtension = -1
+    )
+
+    # Extraction des informations
+    alignments_info[[i]] <- list(
+      start = start(subject(aln)),
+      end = end(subject(aln)),
+      identity = pid(aln, type = "PID1") / 100,  # Pourcentage d'identité
+      score = score(aln)
+    )
+  }
+
+  return(alignments_info)
+}
+
+# ==============================================================================
+# FONCTIONS HELPER POUR SVG
+# ==============================================================================
+
+#' Calcul de position SVG standardisé
+#' @param position Position dans la séquence
+#' @param sequence_length Longueur totale de la séquence
+#' @param viz_width Largeur du SVG
+#' @return Position X calculée
+calculate_svg_x_position <- function(position, sequence_length, viz_width = CONFIG_DEFAULTS$svg_width) {
+  ruler_width <- viz_width - CONFIG_DEFAULTS$svg_ruler_margin
+  return(CONFIG_DEFAULTS$svg_ruler_margin/2 + (position / sequence_length) * ruler_width)
+}
+
+#' Création d'un élément SVG rectangle standardisé
+#' @param x Position X
+#' @param y Position Y
+#' @param width Largeur
+#' @param height Hauteur
+#' @param fill Couleur de remplissage
+#' @param title Titre pour le tooltip
+#' @param opacity Opacité (défaut: 0.8)
+#' @return Code HTML du rectangle
+create_svg_rect <- function(x, y, width, height, fill, title = "", opacity = 0.8) {
+  return(paste0('<rect x="', x, '" y="', y, '" width="', max(width, 2),
+                '" height="', height, '" fill="', fill, '" opacity="', opacity, '">',
+                if(title != "") paste0('<title>', title, '</title>'), '</rect>'))
 }
