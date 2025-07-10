@@ -59,9 +59,12 @@ server_clonage <- function(input, output, session) {
     seq_base_dir <- "P:/SEQ"
   }
 
+  addResourcePath("ab1files", seq_base_dir)
+
   cat("📁 Chemins configurés:\n")
   cat("   - GenBank (.gb):", xdna_dir, "\n")
   cat("   - Séquences (.seq):", seq_base_dir, "\n")
+  cat("   - AB1 path configuré:", seq_base_dir, "\n")  # Debug
 
   # ==============================================================================
   # FONCTIONS DE RECHERCHE
@@ -363,61 +366,7 @@ server_clonage <- function(input, output, session) {
     }
   })
 
-  # Observer unique pour AB1 - VERSION CORRIGÉE
-  observe({
-    req(ab1_data$file_info)
-    is_server <- !(.Platform$OS.type == "windows")
 
-    if (is_server) {
-      lapply(seq_along(ab1_data$file_info), function(i) {
-        file_info <- ab1_data$file_info[[i]]
-
-        if (file_info$exists) {
-          output[[paste0("download_ab1_", i)]] <- downloadHandler(
-            filename = function() {
-              basename(file_info$ab1_file)
-            },
-            content = function(file) {
-              file.copy(file_info$ab1_file, file)
-            },
-            contentType = "application/ab1"
-          )
-
-          # MODIFICATION : Forcer les headers pour éviter le téléchargement automatique
-          outputOptions(output, paste0("download_ab1_", i),
-                        suspendWhenHidden = FALSE,
-                        # Ajouter des options pour contrôler les headers
-                        priority = 1000)
-        }
-      })
-    } else {
-      # LOCAL : Observers pour ouverture directe (inchangé)
-      lapply(seq_along(ab1_data$file_info), function(i) {
-        file_info <- ab1_data$file_info[[i]]
-
-        if (file_info$exists) {
-          observeEvent(input[[paste0("open_ab1_", i)]], {
-            file_path <- file_info$ab1_file
-            file_name <- basename(file_path)
-
-            success <- open_file_with_default_app(file_path)
-
-            if (success) {
-              showNotification(
-                paste0("📂 Ouverture de ", file_name, "..."),
-                type = "message", duration = 3
-              )
-            } else {
-              showNotification(
-                paste0("❌ Impossible d'ouvrir ", file_name),
-                type = "error", duration = 5
-              )
-            }
-          }, ignoreInit = TRUE, autoDestroy = TRUE)
-        }
-      })
-    }
-  })
 
   # ==============================================================================
   # OUTPUTS INTERFACE
@@ -557,49 +506,37 @@ server_clonage <- function(input, output, session) {
       ab1_name <- basename(file_info$ab1_file)
 
       if (file_info$exists) {
-        if (is_server) {
-          # SERVEUR : Bouton de téléchargement simple
-          button_list[[i]] <- div(
-            style = "margin-bottom: 8px; padding: 8px; background: #f8f9fa; border: 1px solid #28a745; border-radius: 4px;",
+        # CALCULER L'URL RELATIVE
+        relative_path <- gsub(paste0("^", gsub("\\\\", "/", seq_base_dir), "/?"), "",
+                              gsub("\\\\", "/", file_info$ab1_file))
+        ab1_direct_url <- paste0("ab1files/", relative_path)
 
-            div(style = "display: flex; justify-content: space-between; align-items: center;",
-                div(style = "flex: 1;",
-                    tags$strong(style = "color: #28a745;", "✅ ", ab1_name),
-                    br(),
-                    tags$small(style = "color: #6c757d;", "Clic → Fenêtre d'ouverture/téléchargement")
-                ),
-                div(style = "flex: 0 0 auto;",
-                    downloadButton(
-                      outputId = paste0("download_ab1_", i),
-                      label = "📂 Ouvrir",
-                      style = "background-color: #28a745; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 12px;",
-                      title = paste0("Ouvrir ", ab1_name)
-                    )
-                )
-            )
-          )
-        } else {
-          # LOCAL : Bouton d'ouverture directe (existant)
-          button_list[[i]] <- div(
-            style = "margin-bottom: 8px; padding: 8px; background: #f8f9fa; border: 1px solid #28a745; border-radius: 4px;",
+        cat("DEBUG AB1:", i, "- Path:", file_info$ab1_file, "- URL:", ab1_direct_url, "\n")
 
-            div(style = "display: flex; justify-content: space-between; align-items: center;",
-                div(style = "flex: 1;",
-                    tags$strong(style = "color: #28a745;", "✅ ", ab1_name)
-                ),
-                div(style = "flex: 0 0 auto;",
-                    actionButton(
-                      inputId = paste0("open_ab1_", i),
-                      label = "📂 Ouvrir",
-                      style = "background-color: #28a745; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 12px;",
-                      title = paste0("Ouvrir ", ab1_name, " avec l'application par défaut")
-                    )
-                )
-            )
+        button_list[[i]] <- div(
+          style = "margin-bottom: 8px; padding: 8px; background: #f8f9fa; border: 1px solid #28a745; border-radius: 4px;",
+
+          div(style = "display: flex; justify-content: space-between; align-items: center;",
+              div(style = "flex: 1;",
+                  tags$strong(style = "color: #28a745;", "✅ ", ab1_name),
+                  br(),
+                  tags$small(style = "color: #6c757d;", "Lien direct vers le fichier AB1")
+              ),
+              div(style = "flex: 0 0 auto;",
+                  # UTILISER UN LIEN DIRECT AU LIEU DE downloadButton
+                  tags$a(
+                    href = ab1_direct_url,
+                    target = "_blank",
+                    class = "btn btn-sm",
+                    style = "background-color: #28a745; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 12px; text-decoration: none;",
+                    title = paste0("Ouvrir ", ab1_name, " directement"),
+                    "📂 Ouvrir"
+                  )
+              )
           )
-        }
+        )
       } else {
-        # Fichier manquant
+        # Fichier manquant (code inchangé)
         button_list[[i]] <- div(
           style = "margin-bottom: 8px; padding: 8px; background: #fff5f5; border: 1px solid #dc3545; border-radius: 4px;",
 
@@ -620,15 +557,14 @@ server_clonage <- function(input, output, session) {
     }
 
     return(div(
-      # Message d'aide simple
-      div(style = "background: #e8f5e8; padding: 8px; border-radius: 4px; margin-bottom: 10px; font-size: 12px;",
-          "💡 ", tags$strong("Sur le serveur :"), " Cliquez pour ouvrir la fenêtre de téléchargement. ",
-          "Choisissez 'Ouvrir avec' pour ouvrir directement le fichier."),
+      # Message d'aide mis à jour
+      div(style = "background: #e3f2fd; padding: 8px; border-radius: 4px; margin-bottom: 10px; font-size: 12px;",
+          "🔗 ", tags$strong("Liens directs :"), " Ces liens ouvrent directement les fichiers AB1 dans votre navigateur.",
+          br(),
+          "Firefox devrait maintenant reconnaître le fichier et proposer de l'ouvrir avec Chromas."),
       button_list
     ))
   })
-
-
 
   # ==============================================================================
   # CHARGEMENT GENBANK
