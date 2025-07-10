@@ -4,8 +4,14 @@
 
 library(shiny)
 library(Biostrings)
+# Chargement correct du package mime
+if (!requireNamespace("mime", quietly = TRUE)) {
+  install.packages("mime")
+}
 library(mime)
-mime::mimemap["ab1"] <- "application/ab1"
+
+# Configuration du MIME type pour les fichiers AB1
+mimemap["ab1"] <- "application/ab1"
 
 server_clonage <- function(input, output, session) {
 
