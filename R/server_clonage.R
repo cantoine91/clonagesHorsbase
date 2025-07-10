@@ -373,8 +373,14 @@ server_clonage <- function(input, output, session) {
             content = function(file) {
               file.copy(file_info$ab1_file, file)
             },
-            # SOLUTION 1 : Utiliser exactement le même MIME type que Firefox connaît
-            contentType = "application/ab1"
+            contentType = "application/ab1",
+            # Ajout d'headers HTTP explicites pour forcer le comportement
+            headers = list(
+              "Content-Type" = "application/ab1",
+              "Content-Disposition" = paste0('attachment; filename="', basename(file_info$ab1_file), '"'),
+              "X-Content-Type-Options" = "nosniff",
+              "Cache-Control" = "no-cache, no-store, must-revalidate"
+            )
           )
         }
       })
