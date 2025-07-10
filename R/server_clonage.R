@@ -4,6 +4,8 @@
 
 library(shiny)
 library(Biostrings)
+library(mime)
+mime::mimemap["ab1"] <- "application/ab1"
 
 server_clonage <- function(input, output, session) {
 
@@ -361,7 +363,7 @@ server_clonage <- function(input, output, session) {
     is_server <- !(.Platform$OS.type == "windows")
 
     if (is_server) {
-      # SERVEUR : Créer les downloadHandlers avec le bon MIME type pour Firefox
+      # SERVEUR : Créer les downloadHandlers avec le bon MIME type
       lapply(seq_along(ab1_data$file_info), function(i) {
         file_info <- ab1_data$file_info[[i]]
 
@@ -373,15 +375,12 @@ server_clonage <- function(input, output, session) {
             content = function(file) {
               file.copy(file_info$ab1_file, file)
             },
-            contentType = "application/ab1",
-            # Ajout d'headers HTTP explicites pour forcer le comportement
-            headers = list(
-              "Content-Type" = "application/ab1",
-              "Content-Disposition" = paste0('attachment; filename="', basename(file_info$ab1_file), '"'),
-              "X-Content-Type-Options" = "nosniff",
-              "Cache-Control" = "no-cache, no-store, must-revalidate"
-            )
+            contentType = "application/ab1"
+            # SUPPRIMÉ : headers = list(...) car ce paramètre n'existe pas dans downloadHandler
           )
+
+          # AJOUTÉ : Cette ligne force Shiny à respecter le contentType
+          outputOptions(output, paste0("download_ab1_", i), suspendWhenHidden = FALSE)
         }
       })
     } else {
