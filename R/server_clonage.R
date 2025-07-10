@@ -59,12 +59,56 @@ server_clonage <- function(input, output, session) {
     seq_base_dir <- "P:/SEQ"
   }
 
-  addResourcePath("ab1files", seq_base_dir)
-
   cat("📁 Chemins configurés:\n")
   cat("   - GenBank (.gb):", xdna_dir, "\n")
   cat("   - Séquences (.seq):", seq_base_dir, "\n")
   cat("   - AB1 path configuré:", seq_base_dir, "\n")  # Debug
+
+  # ==============================================================================
+  # HANDLER PERSONNALISÉ POUR AB1 AVEC BON MIME TYPE
+  # ==============================================================================
+
+  session$registerDataObj(
+    name = "ab1_handler",
+    data = seq_base_dir,
+    func = function(data, req) {
+      path_info <- req$PATH_INFO
+
+      if (startsWith(path_info, "/ab1_handler/")) {
+        relative_path <- substr(path_info, 15, nchar(path_info))
+        file_path <- file.path(data, relative_path)
+
+        cat("HANDLER AB1 - Requested:", relative_path, "\n")
+        cat("HANDLER AB1 - Full path:", file_path, "\n")
+
+        if (file.exists(file_path) && grepl("\\.ab1$", file_path, ignore.case = TRUE)) {
+          file_content <- readBin(file_path, "raw", file.info(file_path)$size)
+
+          cat("HANDLER AB1 - File found, size:", length(file_content), "bytes\n")
+
+          return(list(
+            status = 200L,
+            headers = list(
+              "Content-Type" = "application/ab1",
+              "Content-Disposition" = paste0('attachment; filename="', basename(file_path), '"'),
+              "Cache-Control" = "no-cache, no-store, must-revalidate",
+              "Pragma" = "no-cache",
+              "Expires" = "0"
+            ),
+            body = file_content
+          ))
+        } else {
+          cat("HANDLER AB1 - File not found or not AB1:", file_path, "\n")
+        }
+      }
+
+      return(list(
+        status = 404L,
+        headers = list("Content-Type" = "text/plain"),
+        body = "File not found"
+      ))
+    }
+  )
 
   # ==============================================================================
   # FONCTIONS DE RECHERCHE
@@ -499,19 +543,24 @@ server_clonage <- function(input, output, session) {
     }
 
     button_list <- list()
-    is_server <- !(.Platform$OS.type == "windows")
 
     for (i in seq_along(ab1_data$file_info)) {
       file_info <- ab1_data$file_info[[i]]
       ab1_name <- basename(file_info$ab1_file)
 
       if (file_info$exists) {
-        # CALCULER L'URL RELATIVE
+        # CALCULER LE CHEMIN RELATIF
         relative_path <- gsub(paste0("^", gsub("\\\\", "/", seq_base_dir), "/?"), "",
                               gsub("\\\\", "/", file_info$ab1_file))
-        ab1_direct_url <- paste0("ab1files/", relative_path)
 
-        cat("DEBUG AB1:", i, "- Path:", file_info$ab1_file, "- URL:", ab1_direct_url, "\n")
+        # CRÉER L'URL AVEC LE HANDLER PERSONNALISÉ
+        handler_url <- session$clientData$url_pathname
+        if (!endsWith(handler_url, "/")) {
+          handler_url <- paste0(handler_url, "/")
+        }
+        ab1_url <- paste0(handler_url, "ab1_handler/", relative_path)
+
+        cat("INTERFACE AB1:", i, "- RelPath:", relative_path, "- URL:", ab1_url, "\n")
 
         button_list[[i]] <- div(
           style = "margin-bottom: 8px; padding: 8px; background: #f8f9fa; border: 1px solid #28a745; border-radius: 4px;",
@@ -520,26 +569,24 @@ server_clonage <- function(input, output, session) {
               div(style = "flex: 1;",
                   tags$strong(style = "color: #28a745;", "✅ ", ab1_name),
                   br(),
-                  tags$small(style = "color: #6c757d;", "Lien direct vers le fichier AB1")
+                  tags$small(style = "color: #6c757d; font-family: monospace; font-size: 10px;", ab1_url)
               ),
               div(style = "flex: 0 0 auto;",
-                  # UTILISER UN LIEN DIRECT AU LIEU DE downloadButton
                   tags$a(
-                    href = ab1_direct_url,
+                    href = ab1_url,
                     target = "_blank",
                     class = "btn btn-sm",
                     style = "background-color: #28a745; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 12px; text-decoration: none;",
-                    title = paste0("Ouvrir ", ab1_name, " directement"),
-                    "📂 Ouvrir"
+                    title = paste0("Ouvrir ", ab1_name, " avec application/ab1 MIME type"),
+                    "📂 Ouvrir AB1"
                   )
               )
           )
         )
       } else {
-        # Fichier manquant (code inchangé)
+        # Fichier manquant
         button_list[[i]] <- div(
           style = "margin-bottom: 8px; padding: 8px; background: #fff5f5; border: 1px solid #dc3545; border-radius: 4px;",
-
           div(style = "display: flex; justify-content: space-between; align-items: center;",
               div(style = "flex: 1;",
                   tags$strong(style = "color: #dc3545;", "❌ ", ab1_name)
@@ -557,9 +604,8 @@ server_clonage <- function(input, output, session) {
     }
 
     return(div(
-      # Message d'aide mis à jour
       div(style = "background: #e3f2fd; padding: 8px; border-radius: 4px; margin-bottom: 10px; font-size: 12px;",
-          "🔗 ", tags$strong("Liens directs :"), " Ces liens ouvrent directement les fichiers AB1 dans votre navigateur.",
+          "🔧 ", tags$strong("Handler personnalisé :"), " Ces liens utilisent un handler personnalisé qui force le MIME type application/ab1.",
           br(),
           "Firefox devrait maintenant reconnaître le fichier et proposer de l'ouvrir avec Chromas."),
       button_list
