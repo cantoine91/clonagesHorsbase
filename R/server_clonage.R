@@ -361,7 +361,7 @@ server_clonage <- function(input, output, session) {
     is_server <- !(.Platform$OS.type == "windows")
 
     if (is_server) {
-      # SERVEUR : Créer les downloadHandlers simples
+      # SERVEUR : Créer les downloadHandlers avec le bon MIME type pour Firefox
       lapply(seq_along(ab1_data$file_info), function(i) {
         file_info <- ab1_data$file_info[[i]]
 
@@ -373,12 +373,13 @@ server_clonage <- function(input, output, session) {
             content = function(file) {
               file.copy(file_info$ab1_file, file)
             },
-            contentType = "application/binary"
+            # SOLUTION 1 : Utiliser exactement le même MIME type que Firefox connaît
+            contentType = "application/ab1"
           )
         }
       })
     } else {
-      # LOCAL : Observers pour ouverture directe
+      # LOCAL : Observers pour ouverture directe (inchangé)
       lapply(seq_along(ab1_data$file_info), function(i) {
         file_info <- ab1_data$file_info[[i]]
 
