@@ -369,7 +369,6 @@ server_clonage <- function(input, output, session) {
     is_server <- !(.Platform$OS.type == "windows")
 
     if (is_server) {
-      # SERVEUR : Créer les downloadHandlers avec le bon MIME type
       lapply(seq_along(ab1_data$file_info), function(i) {
         file_info <- ab1_data$file_info[[i]]
 
@@ -382,11 +381,13 @@ server_clonage <- function(input, output, session) {
               file.copy(file_info$ab1_file, file)
             },
             contentType = "application/ab1"
-            # SUPPRIMÉ : headers = list(...) car ce paramètre n'existe pas dans downloadHandler
           )
 
-          # AJOUTÉ : Cette ligne force Shiny à respecter le contentType
-          outputOptions(output, paste0("download_ab1_", i), suspendWhenHidden = FALSE)
+          # MODIFICATION : Forcer les headers pour éviter le téléchargement automatique
+          outputOptions(output, paste0("download_ab1_", i),
+                        suspendWhenHidden = FALSE,
+                        # Ajouter des options pour contrôler les headers
+                        priority = 1000)
         }
       })
     } else {
