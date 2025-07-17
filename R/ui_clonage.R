@@ -379,29 +379,13 @@ ui_clonage <- navbarPage(
                  # Sélection finale des fichiers .seq trouvés
                  conditionalPanel(
                    condition = "output.seq_files_found",
-
                    # Affichage dynamique des groupes
                    uiOutput("groups_selection_ui"),
 
-                   div(style = "margin-top: 15px; padding: 10px; background: #f1f3f4; border-radius: 4px;",
-                       h5("⚙️ Sélection globale", style = "color: #b22222; margin-top: 0; margin-bottom: 10px;"),
-
-                       fluidRow(
-                         column(6,
-                                actionButton("select_all_groups", "✅ Sélectionner tous les groupes",
-                                             style = "background-color: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 4px; width: 100%;")
-                         ),
-                         column(6,
-                                actionButton("clear_all_groups", "❌ Tout désélectionner",
-                                             style = "background-color: #dc3545; color: white; border: none; padding: 8px 16px; border-radius: 4px; width: 100%;")
-                         )
-                       ),
-
-                       # Affichage du résumé de sélection
-                       div(id = "selection_summary",
-                           style = "margin-top: 10px; padding: 8px; background: #e8f4f8; border-radius: 4px; font-family: monospace; font-size: 12px;",
-                           textOutput("selection_summary_text")
-                       )
+                   # Affichage du résumé de sélection seulement
+                   div(id = "selection_summary",
+                       style = "margin-top: 10px; padding: 8px; background: #e8f4f8; border-radius: 4px; font-family: monospace; font-size: 12px;",
+                       textOutput("selection_summary_text")
                    )
                  )
                ),
@@ -412,41 +396,91 @@ ui_clonage <- navbarPage(
                wellPanel(
                  h4("🧬 Sites de restriction", style = "color: #b22222; margin-top: 0;"),
 
+                 # Enzyme 1
                  fluidRow(
                    column(6,
                           selectInput("enzyme1",
                                       "Enzyme 1:",
-                                      choices = c("Aucune" = "", names(get_restriction_enzymes())),
+                                      choices = c("Aucune" = "", "Oligo ou autre bout de séquence" = "CUSTOM", names(get_restriction_enzymes())),
                                       selected = "",
                                       width = "100%")
                    ),
                    column(6,
-                          selectInput("enzyme2",
-                                      "Enzyme 2:",
-                                      choices = c("Aucune" = "", names(get_restriction_enzymes())),
-                                      selected = "",
+                          # Input conditionnel pour séquence personnalisée
+                          conditionalPanel(
+                            condition = "input.enzyme1 == 'CUSTOM'",
+                            textInput("enzyme1_custom_seq",
+                                      "Séquence oligo/séquence 1:",
+                                      value = "",
+                                      placeholder = "ex: GAATTC, GCTAGC, ATGCGATCG...",
                                       width = "100%")
+                          ),
+                          # Nom optionnel pour la séquence personnalisée
+                          conditionalPanel(
+                            condition = "input.enzyme1 == 'CUSTOM'",
+                            textInput("enzyme1_custom_name",
+                                      "Nom séquence 1 (optionnel):",
+                                      value = "",
+                                      placeholder = "ex: MonOligo1",
+                                      width = "100%")
+                          )
                    )
                  ),
+
+                 # Enzyme 2
+                 fluidRow(
+                   column(6,
+                          selectInput("enzyme2",
+                                      "Enzyme 2:",
+                                      choices = c("Aucune" = "", "Oligo ou autre bout de séquence" = "CUSTOM", names(get_restriction_enzymes())),
+                                      selected = "",
+                                      width = "100%")
+                   ),
+                   column(6,
+                          # Input conditionnel pour séquence personnalisée
+                          conditionalPanel(
+                            condition = "input.enzyme2 == 'CUSTOM'",
+                            textInput("enzyme2_custom_seq",
+                                      "Séquence oligo/séquence 2:",
+                                      value = "",
+                                      placeholder = "ex: AAGCTT, CTGCAG, TGCAGTCGA...",
+                                      width = "100%")
+                          ),
+                          # Nom optionnel pour la séquence personnalisée
+                          conditionalPanel(
+                            condition = "input.enzyme2 == 'CUSTOM'",
+                            textInput("enzyme2_custom_name",
+                                      "Nom séquence 2 (optionnel):",
+                                      value = "",
+                                      placeholder = "ex: MonOligo2",
+                                      width = "100%")
+                          )
+                   )
+                 ),
+
+                 # Message d'aide pour les séquences personnalisées
+                 div(style = "background: #e8f4f8; padding: 8px; border-radius: 4px; margin: 10px 0; font-size: 12px;",
+                     "💡 ", tags$strong("Séquences personnalisées:"),
+                     " Saisissez n'importe quelle séquence d'ADN (oligo etc.). ",
+                     "Seules les lettres A, T, C, G sont acceptées. Idéal pour rechercher des sites de coupure spécifiques ou des séquences d'intérêt."),
 
                  # Affichage des informations sur les sites trouvés
                  div(style = "background: #e8f4f8; padding: 8px; border-radius: 4px; margin-top: 10px; font-family: monospace; font-size: 12px;",
                      textOutput("restriction_info")
                  ),
 
-                 # Option d'affichage centré sur les sites de restriction
+                 # Options d'affichage
                  div(style = "margin-top: 15px; padding: 10px; background: #f1f3f4; border-radius: 4px;",
                      h5("⚙️ Options d'affichage", style = "color: #b22222; margin-top: 0; margin-bottom: 10px;"),
 
                      checkboxInput("show_restriction_context",
-                                   label = "Centrer l'alignement sur les sites de restriction (±200nt)",
+                                   label = "Centrer l'alignement sur les sites de restriction/séquences (±200nt)",
                                    value = TRUE),
 
-                     # Message d'aide conditionnel
                      conditionalPanel(
                        condition = "input.show_restriction_context == true",
                        div(style = "margin-top: 5px; padding: 5px; background: #e8f5e8; border-left: 3px solid #4caf50; font-size: 12px;",
-                           "💡 L'alignement sera centré sur la région entre les sites de restriction avec ±200nt de contexte.",
+                           "💡 L'alignement sera centré sur la région entre les sites trouvés avec ±200nt de contexte.",
                            br(),
                            "Si aucun site n'est trouvé, la séquence complète sera affichée.")
                      ),

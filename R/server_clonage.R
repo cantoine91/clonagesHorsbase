@@ -137,10 +137,10 @@ server_clonage <- function(input, output, session) {
         }
       }
 
-      # Organiser par groupes
-      groups <- organize_files_by_groups(matching_files, display_names)
+      # CHANGEMENT : Organiser par clones d'abord
+      clones <- organize_files_by_fragments(matching_files, display_names)
 
-      return(list(files = display_names, paths = matching_files, groups = groups))
+      return(list(files = display_names, paths = matching_files, groups = clones))
 
     }, error = function(e) {
       return(list(files = character(), paths = character(), groups = list()))
@@ -173,28 +173,105 @@ server_clonage <- function(input, output, session) {
 
   restriction_sites <- reactive({
     req(data_xdna$seq)
+
+    # Récupérer les informations sur les fragments si disponibles
+    selected_files <- get_all_selected_files()
+    if (length(selected_files) == 0) {
+      return(list())
+    }
+
     sites_list <- list()
     enzymes <- get_restriction_enzymes()
 
+    # Déterminer les séquences d'enzymes
+    enzyme1_seq <- NULL
+    enzyme2_seq <- NULL
+
     if (!is.null(input$enzyme1) && input$enzyme1 != "") {
-      sites1 <- find_restriction_sites(data_xdna$seq, enzymes[[input$enzyme1]])
-      if (length(sites1) > 0) sites_list[[input$enzyme1]] <- sites1
+      if (input$enzyme1 == "CUSTOM") {
+        enzyme1_seq <- validate_enzyme_sequence(input$enzyme1_custom_seq)
+      } else {
+        enzyme1_seq <- enzymes[[input$enzyme1]]
+      }
     }
 
     if (!is.null(input$enzyme2) && input$enzyme2 != "") {
-      sites2 <- find_restriction_sites(data_xdna$seq, enzymes[[input$enzyme2]])
-      if (length(sites2) > 0) sites_list[[input$enzyme2]] <- sites2
+      if (input$enzyme2 == "CUSTOM") {
+        enzyme2_seq <- validate_enzyme_sequence(input$enzyme2_custom_seq)
+      } else {
+        enzyme2_seq <- enzymes[[input$enzyme2]]
+      }
+    }
+
+    # Chercher les enzymes dans la séquence de référence
+    if (!is.null(enzyme1_seq)) {
+      enzyme1_name <- if (input$enzyme1 == "CUSTOM") {
+        if (!is.null(input$enzyme1_custom_name) && input$enzyme1_custom_name != "") {
+          input$enzyme1_custom_name
+        } else {
+          paste0("Custom1_", enzyme1_seq)
+        }
+      } else {
+        input$enzyme1
+      }
+
+      sites1 <- find_restriction_sites(data_xdna$seq, enzyme1_seq)
+      if (length(sites1) > 0) {
+        sites_list[[enzyme1_name]] <- sites1
+        attr(sites_list[[enzyme1_name]], "enzyme_sequence") <- enzyme1_seq
+      }
+    }
+
+    if (!is.null(enzyme2_seq)) {
+      enzyme2_name <- if (input$enzyme2 == "CUSTOM") {
+        if (!is.null(input$enzyme2_custom_name) && input$enzyme2_custom_name != "") {
+          input$enzyme2_custom_name
+        } else {
+          paste0("Custom2_", enzyme2_seq)
+        }
+      } else {
+        input$enzyme2
+      }
+
+      sites2 <- find_restriction_sites(data_xdna$seq, enzyme2_seq)
+      if (length(sites2) > 0) {
+        sites_list[[enzyme2_name]] <- sites2
+        attr(sites_list[[enzyme2_name]], "enzyme_sequence") <- enzyme2_seq
+      }
     }
 
     return(sites_list)
   })
 
+
   output$restriction_info <- renderText({
     sites <- restriction_sites()
-    if (length(sites) == 0) return("Aucun site trouvé")
+    selected_files <- get_all_selected_files()
 
-    info <- sapply(names(sites), function(e) paste0(e, ": ", length(sites[[e]]), " site(s)"))
-    paste(info, collapse = " | ")
+    if (length(sites) == 0) {
+      return("Aucun site trouvé dans la séquence de référence")
+    }
+
+    info_parts <- character()
+
+    # Informations sur les sites trouvés
+    for (enzyme_name in names(sites)) {
+      enzyme_sites <- sites[[enzyme_name]]
+      info_parts <- c(info_parts, paste0(enzyme_name, ": ", length(enzyme_sites), " site(s)"))
+    }
+
+    # Informations sur les fragments si disponibles
+    if (length(selected_files) > 0) {
+      fragment_types <- sapply(selected_files, extract_fragment_type)
+      fragment_summary <- table(fragment_types)
+
+      if (length(fragment_summary) > 0) {
+        fragment_info <- paste(names(fragment_summary), fragment_summary, sep = ":", collapse = " | ")
+        info_parts <- c(info_parts, paste0("Fragments: ", fragment_info))
+      }
+    }
+
+    return(paste(info_parts, collapse = " | "))
   })
 
   # ==============================================================================
@@ -268,62 +345,75 @@ server_clonage <- function(input, output, session) {
     })
   })
 
-  # Gestion des boutons de sélection globale
-  # ✅ SOLUTION : Une seule fonction qui fait tout
+  # Observer 1 : Pour les checkboxes individuelles des clones
+  observe({
+    req(search_data$file_groups)
 
-  # Fonction helper centralisée
-  create_group_observers <- function(groups) {
-    lapply(seq_along(groups), function(i) {
+    clones <- search_data$file_groups
+
+    # Vérification que clones n'est pas vide
+    if (length(clones) == 0) {
+      return()
+    }
+
+    global_counter <- 0
+
+    for (clone_id in names(clones)) {
+      global_counter <- global_counter + 1
+      clone_data <- clones[[clone_id]]
+
+      # Vérification que clone_data existe et a des paths
+      if (is.null(clone_data) || is.null(clone_data$paths)) {
+        next
+      }
+
       local({
-        group_index <- i
-        group_data <- groups[[i]]
+        counter <- global_counter
+        paths <- clone_data$paths
 
-        # Un seul observer par groupe
-        observeEvent(input[[paste0("select_group_", group_index)]], {
-          checkbox_value <- input[[paste0("select_group_", group_index)]]
-          group_select_id <- paste0("seq_files_group_", group_index)
+        observeEvent(input[[paste0("select_clone_", counter)]], {
+          checkbox_value <- input[[paste0("select_clone_", counter)]]
+          clone_select_id <- paste0("seq_files_clone_", counter)
 
           if (isTRUE(checkbox_value)) {
-            updateSelectInput(session, group_select_id, selected = group_data$paths)
+            updateSelectInput(session, clone_select_id, selected = paths)
           } else {
-            updateSelectInput(session, group_select_id, selected = character())
+            updateSelectInput(session, clone_select_id, selected = character())
           }
         }, ignoreInit = TRUE, ignoreNULL = TRUE)
       })
-    })
-  }
-
-  # Un seul observer principal
-  observeEvent(search_data$file_groups, {
-    if (!is.null(search_data$file_groups) && length(search_data$file_groups) > 0) {
-      create_group_observers(search_data$file_groups)
-    }
-  }, ignoreNULL = TRUE)
-
-  observeEvent(input$clear_all_groups, {
-    if (!is.null(search_data$file_groups) && length(search_data$file_groups) > 0) {
-      groups <- search_data$file_groups
-      for (i in seq_along(groups)) {
-        updateSelectInput(session, paste0("seq_files_group_", i), selected = character())
-        updateCheckboxInput(session, paste0("select_group_", i), value = FALSE)
-      }
-
-      showNotification("❌ Toutes les sélections ont été effacées", type = "message", duration = 3)
     }
   })
 
-  # Gestion des boutons de sélection globale
-  observeEvent(input$select_all_groups, {
-    if (!is.null(search_data$file_groups) && length(search_data$file_groups) > 0) {
-      groups <- search_data$file_groups
-      for (i in seq_along(groups)) {
-        group_data <- groups[[i]]
-        updateSelectInput(session, paste0("seq_files_group_", i),
-                          selected = group_data$paths)
-        updateCheckboxInput(session, paste0("select_group_", i), value = TRUE)
-      }
+  # ==============================================================================
+  # AJOUT DANS SERVER_CLONAGE.R - VALIDATION EN TEMPS RÉEL
+  # ==============================================================================
 
-      showNotification("✅ Tous les groupes ont été sélectionnés", type = "message", duration = 3)
+  # Validation séquence 1 personnalisée
+  observeEvent(input$enzyme1_custom_seq, {
+    if (!is.null(input$enzyme1_custom_seq) && input$enzyme1_custom_seq != "") {
+      validated <- validate_enzyme_sequence(input$enzyme1_custom_seq)
+      if (is.null(validated)) {
+        showNotification("⚠️ Séquence 1 invalide. Utilisez seulement A, T, C, G (minimum 3 caractères)",
+                         type = "warning", duration = 3)
+      } else {
+        showNotification("✅ Séquence 1 valide - Recherche possible",
+                         type = "message", duration = 2)
+      }
+    }
+  })
+
+  # Validation séquence 2 personnalisée
+  observeEvent(input$enzyme2_custom_seq, {
+    if (!is.null(input$enzyme2_custom_seq) && input$enzyme2_custom_seq != "") {
+      validated <- validate_enzyme_sequence(input$enzyme2_custom_seq)
+      if (is.null(validated)) {
+        showNotification("⚠️ Séquence 2 invalide. Utilisez seulement A, T, C, G (minimum 3 caractères)",
+                         type = "warning", duration = 3)
+      } else {
+        showNotification("✅ Séquence 2 valide - Recherche possible",
+                         type = "message", duration = 2)
+      }
     }
   })
 
@@ -449,50 +539,126 @@ server_clonage <- function(input, output, session) {
   output$groups_selection_ui <- renderUI({
     req(search_data$file_groups)
 
-    groups <- search_data$file_groups
-    if (length(groups) == 0) return(NULL)
+    clones <- search_data$file_groups
 
-    group_uis <- list()
+    if (length(clones) == 0) {
+      return(NULL)
+    }
 
-    for (i in seq_along(groups)) {
-      group_name <- names(groups)[i]
-      group_data <- groups[[i]]
+    clone_uis <- list()
 
-      # Créer les choix pour ce groupe
-      choices_list <- setNames(group_data$paths, group_data$display_names)
+    # Compteur global pour les IDs uniques
+    global_counter <- 0
 
-      group_ui <- div(
-        style = "margin-bottom: 15px; padding: 10px; border: 1px solid #dee2e6; border-radius: 4px; background: #f8f9fa;",
+    for (clone_id in names(clones)) {
+      global_counter <- global_counter + 1
+      clone_data <- clones[[clone_id]]
 
-        # En-tête du groupe avec checkbox pour sélection/désélection du groupe
-        div(style = "margin-bottom: 10px; padding-bottom: 5px; border-bottom: 1px solid #ccc;",
-            h6(paste("🧬", group_name, "(", length(group_data$paths), "clones)"),
-               style = "color: #495057; margin: 0; display: inline-block;"),
+      # Vérifications de sécurité
+      if (is.null(clone_data) || is.null(clone_data$paths)) {
+        next
+      }
 
-            div(style = "float: right;",
-                checkboxInput(paste0("select_group_", i),
-                              label = "Sélectionner tout le groupe",
-                              value = FALSE)
-            ),
-            div(style = "clear: both;")
+      fragments <- clone_data$fragments
+
+      # Calculer le nombre total de fichiers dans ce clone
+      total_files <- length(clone_data$paths)
+
+      # CORRECTION 1 : Créer la liste des choix TRIÉE dans l'ordre correct
+      # Récupérer les paths et display_names dans l'ordre des fragments
+      ordered_paths <- character()
+      ordered_display_names <- character()
+
+      # Ordre souhaité : 5p → int → 3p
+      fragment_order <- c("5p", "int", "int1", "int2", "int3", "int4", "int5", "3p")
+
+      for (fragment_type in fragment_order) {
+        if (fragment_type %in% names(fragments)) {
+          fragment_data <- fragments[[fragment_type]]
+          if (!is.null(fragment_data) && !is.null(fragment_data$paths)) {
+            ordered_paths <- c(ordered_paths, fragment_data$paths)
+            ordered_display_names <- c(ordered_display_names, fragment_data$display_names)
+          }
+        }
+      }
+
+      # Si pas de tri possible, utiliser l'ordre original
+      if (length(ordered_paths) == 0) {
+        ordered_paths <- clone_data$paths
+        ordered_display_names <- clone_data$display_names
+      }
+
+      choices_list <- setNames(ordered_paths, ordered_display_names)
+
+      # Créer un résumé des fragments présents
+      fragment_summary <- character()
+
+      if (length(fragments) > 0) {
+        for (fragment_type in names(fragments)) {
+          fragment_data <- fragments[[fragment_type]]
+
+          if (!is.null(fragment_data) && !is.null(fragment_data$paths)) {
+            fragment_count <- length(fragment_data$paths)
+
+            # Icône selon le type
+            if (fragment_type == "5p") {
+              icon <- "🔹"
+            } else if (fragment_type == "3p") {
+              icon <- "🔸"
+            } else if (grepl("int", fragment_type)) {
+              icon <- "🔻"
+            } else {
+              icon <- "🧬"
+            }
+
+            fragment_summary <- c(fragment_summary, paste0(icon, fragment_type, ":", fragment_count))
+          }
+        }
+      }
+
+      # Si pas de résumé, en créer un par défaut
+      if (length(fragment_summary) == 0) {
+        fragment_summary <- paste0("📁 ", total_files, " fichier(s)")
+      }
+
+      # Créer l'UI pour ce clone
+      clone_ui <- div(
+        style = "margin-bottom: 15px; padding: 12px; border: 2px solid #6c757d; border-radius: 6px; background: #f8f9fa;",
+
+        # En-tête du clone
+        div(style = "margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #dee2e6;",
+            div(style = "display: flex; justify-content: space-between; align-items: center;",
+                div(
+                  h5(paste("🧬", clone_id, "(", total_files, "fichiers)"),
+                     style = "color: #495057; margin: 0; font-weight: bold;"),
+                  tags$small(paste(fragment_summary, collapse = " | "),
+                             style = "color: #6c757d; font-style: italic;")
+                ),
+                div(
+                  checkboxInput(paste0("select_clone_", global_counter),
+                                label = "Tout sélectionner",
+                                value = FALSE)
+                )
+            )
         ),
 
-        # Liste de sélection pour ce groupe
-        selectInput(paste0("seq_files_group_", i),
+        # Liste de sélection pour ce clone
+        selectInput(paste0("seq_files_clone_", global_counter),
                     label = NULL,
                     choices = choices_list,
                     multiple = TRUE,
                     width = "100%",
-                    selectize = FALSE,  # AJOUT: Désactiver selectize pour pouvoir utiliser size
-                    size = min(8, length(choices_list)))  # Maintenant size est compatible
+                    selectize = FALSE,
+                    size = min(6, length(choices_list)))
       )
 
-      group_uis[[i]] <- group_ui
+      clone_uis[[clone_id]] <- clone_ui
     }
 
+    # CORRECTION 2 : Supprimer le message vert
     return(div(
-      h5("📁 Fichiers .seq trouvés par groupes", style = "color: #b22222; margin-bottom: 15px;"),
-      group_uis
+      h5("🧬 Clones trouvés", style = "color: #b22222; margin-bottom: 15px;"),
+      clone_uis
     ))
   })
 
@@ -501,19 +667,27 @@ server_clonage <- function(input, output, session) {
     req(search_data$file_groups)
 
     all_selected <- character()
-    groups <- search_data$file_groups
+    clones <- search_data$file_groups
 
-    for (i in seq_along(groups)) {
-      group_input_name <- paste0("seq_files_group_", i)
-      group_selection <- input[[group_input_name]]
+    if (length(clones) == 0) {
+      return(all_selected)
+    }
 
-      if (!is.null(group_selection) && length(group_selection) > 0) {
-        all_selected <- c(all_selected, group_selection)
+    global_counter <- 0
+
+    for (clone_id in names(clones)) {
+      global_counter <- global_counter + 1
+      clone_input_name <- paste0("seq_files_clone_", global_counter)
+      clone_selection <- input[[clone_input_name]]
+
+      if (!is.null(clone_selection) && length(clone_selection) > 0) {
+        all_selected <- c(all_selected, clone_selection)
       }
     }
 
     return(all_selected)
   })
+
 
   # Output pour le résumé de sélection
   output$selection_summary_text <- renderText({
@@ -696,13 +870,50 @@ server_clonage <- function(input, output, session) {
       return(NULL)
     }
 
-    lapply(selected_files, function(f) {
-      lines <- readLines(f, warn = FALSE)
+    # Organiser les fichiers par fragments
+    fragments_data <- list()
+    for (file_path in selected_files) {
+      fragment_type <- extract_fragment_type(file_path)
+      if (is.null(fragment_type)) {
+        fragment_type <- "unknown"
+      }
+
+      fragments_data[[length(fragments_data) + 1]] <- list(
+        path = file_path,
+        type = fragment_type
+      )
+    }
+
+    # Trier par type de fragment
+    fragments_data <- fragments_data[order(sapply(fragments_data, function(x) {
+      type_order <- c("5p", "int", "int1", "int2", "int3", "int4", "int5", "3p", "unknown")
+      match(x$type, type_order)
+    }))]
+
+    # Charger les séquences
+    sequences <- list()
+    for (i in seq_along(fragments_data)) {
+      fragment <- fragments_data[[i]]
+
+      # Lire la séquence
+      lines <- readLines(fragment$path, warn = FALSE)
       seq_raw <- paste(lines, collapse = "")
       seq_clean <- clean_sequence(seq_raw)
-      Biostrings::DNAString(seq_clean)
-    })
+
+      # Appliquer le reverse complément pour les fragments 3p
+      if (fragment$type == "3p") {
+        seq_clean <- reverse_complement(seq_clean)
+      }
+
+      sequences[[i]] <- Biostrings::DNAString(seq_clean)
+    }
+
+    # Stocker les informations de fragments pour utilisation ultérieure
+    attr(sequences, "fragments_info") <- fragments_data
+
+    return(sequences)
   })
+
 
 
   # ==============================================================================
@@ -877,7 +1088,7 @@ server_clonage <- function(input, output, session) {
           region_seq <- data_xdna$seq[display_region$start:display_region$end]
           region_length <- length(region_seq)
 
-          # Ajustement des positions d'alignement relatives à la région
+          # Ajustement des positions d'alignement relatives à la région d'affichage
           relative_start <- max(1, aln_start - display_region$start + 1)
           relative_end <- min(region_length, aln_end - display_region$start + 1)
 
@@ -892,6 +1103,9 @@ server_clonage <- function(input, output, session) {
 
           region_info_text <- paste0(" (région ", display_region$start, "-", display_region$end,
                                      ", alignement: ", aln_start, "-", aln_end, ")")
+
+          # AJOUT CRUCIAL : Passer l'offset de début pour les positions absolues
+          display_start_offset <- display_region$start
         } else {
           # Mode normal : séquence complète
           full_pattern <- create_full_pattern_with_gaps(pat_aligned, aln_start, length(data_xdna$seq))
@@ -902,6 +1116,21 @@ server_clonage <- function(input, output, session) {
           restriction_positions <- build_restriction_position_map(length(data_xdna$seq), restriction_sites())
 
           region_info_text <- paste0(" (région alignée: ", aln_start, "-", aln_end, ")")
+
+          # Pas d'offset en mode normal
+          display_start_offset <- 1
+        }
+
+        # Déterminer le type de fragment pour ce fichier
+        file_fragment_type <- if (!is.null(selected_files_paths) && i <= length(selected_files_paths)) {
+          extract_fragment_type(selected_files_paths[i])
+        } else {
+          NULL
+        }
+
+        # Si pas de type détecté, utiliser un fallback
+        if (is.null(file_fragment_type)) {
+          file_fragment_type <- "Seq"
         }
 
         # Nom d'affichage du fichier
@@ -911,13 +1140,15 @@ server_clonage <- function(input, output, session) {
           paste0("Fichier_", i)
         }
 
-        # Génération de l'alignement coloré
+        # Génération de l'alignement coloré AVEC le type de fragment
         blast_alignment <- generate_colored_alignment(
           full_pattern, full_subject, full_annot,
-          if (input$show_restriction_context && length(restriction_sites()) > 0) display_region$start else aln_start,
+          aln_start,  # IMPORTANT : Toujours utiliser la position absolue d'origine
           colors,
           paste0(file_display_name, region_info_text),
-          restriction_positions
+          restriction_positions,
+          display_start_offset,  # NOUVEAU PARAMÈTRE pour calculer les positions absolues
+          file_fragment_type     # NOUVEAU PARAMÈTRE pour le type de fragment
         )
 
         align_output <- c(align_output, blast_alignment$html)

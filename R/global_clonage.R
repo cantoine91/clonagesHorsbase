@@ -27,8 +27,9 @@ CONFIG_DEFAULTS <- list(
 # Styles CSS réutilisés
 CSS_STYLES <- list(
   base_cell = "font-family: Courier New, monospace; text-align: center; padding: 0; margin: 0; border: 0; width: 1ch; min-width: 1ch; max-width: 1ch;",
-  prefix = "font-family: Courier New, monospace; padding: 0; margin: 0; text-align: left; width: 100px; min-width: 100px; max-width: 100px; white-space: nowrap;",
-  suffix = "font-family: Courier New, monospace; padding: 0 0 0 8px; margin: 0; text-align: left; width: 60px; min-width: 60px; max-width: 60px;",
+  prefix_label = "font-family: Courier New, monospace; padding: 0; margin: 0; text-align: left; width: 60px; min-width: 60px; max-width: 60px; white-space: nowrap;",
+  prefix_number = "font-family: Courier New, monospace; padding: 0 5px 0 0; margin: 0; text-align: right; width: 60px; min-width: 60px; max-width: 60px; white-space: nowrap;",
+  suffix = "font-family: Courier New, monospace; padding: 0 0 0 5px; margin: 0; text-align: left; width: 60px; min-width: 60px; max-width: 60px;",
   table = "border-collapse: collapse; margin: 10px 0; font-family: Courier New, monospace;"
 )
 
@@ -172,7 +173,6 @@ find_restriction_sites <- function(sequence, enzyme_sequence) {
   return(as.integer(matches))
 }
 
-
 #' Construction d'une carte des positions de sites de restriction
 #' @param sequence_length Longueur de la séquence
 #' @param restriction_sites Liste des sites de restriction par enzyme
@@ -182,17 +182,29 @@ build_restriction_position_map <- function(sequence_length, restriction_sites, a
   is_restriction <- rep(FALSE, sequence_length)
 
   if (!is.null(restriction_sites) && length(restriction_sites) > 0) {
-    enzymes <- get_restriction_enzymes()
 
     for (enzyme_name in names(restriction_sites)) {
       sites <- restriction_sites[[enzyme_name]]
       if (length(sites) > 0) {
 
-        # Gestion spéciale pour SfiI (site de 13 bp)
-        if (enzyme_name == "SfiI") {
-          site_length <- 13  # GGCC + 5 nucléotides + GGCC
+        # Récupérer la séquence de l'enzyme depuis les attributs stockés
+        enzyme_sequence <- attr(sites, "enzyme_sequence")
+
+        if (!is.null(enzyme_sequence)) {
+          # Utiliser la séquence stockée
+          if (enzyme_sequence == "GGCC.....GGCC") {
+            site_length <- 13  # Cas spécial SfiI
+          } else {
+            site_length <- nchar(enzyme_sequence)
+          }
         } else {
-          site_length <- nchar(enzymes[[enzyme_name]])
+          # Fallback : essayer de deviner ou utiliser une valeur par défaut
+          enzymes <- get_restriction_enzymes()
+          if (enzyme_name %in% names(enzymes)) {
+            site_length <- nchar(enzymes[[enzyme_name]])
+          } else {
+            site_length <- 6  # Valeur par défaut raisonnable
+          }
         }
 
         for (site_pos in sites) {
@@ -724,7 +736,8 @@ find_corresponding_ab1_files <- function(seq_files_paths) {
 #' @param restriction_positions Positions des sites de restriction (optionnel)
 #' @return Liste avec versions HTML et texte de l'alignement
 generate_colored_alignment <- function(pattern_seq, subject_seq, annotation_seq, start_position,
-                                       colors, filename, restriction_positions = NULL) {
+                                       colors, filename, restriction_positions = NULL,
+                                       display_start_offset = 1, fragment_type = NULL) {
   line_length <- CONFIG_DEFAULTS$line_length
   sequence_length <- nchar(subject_seq)
 
@@ -746,8 +759,8 @@ generate_colored_alignment <- function(pattern_seq, subject_seq, annotation_seq,
     annotation_segment <- substr(annotation_seq, start, end)
 
     # Calcul des positions d'affichage pour le sujet (séquence de référence)
-    subject_start <- start
-    subject_end <- end
+    subject_start_absolute <- (display_start_offset - 1) + start
+    subject_end_absolute <- (display_start_offset - 1) + end
 
     # Compter les nucléotides réels (non-gap) avant ce segment
     pattern_before_segment <- substr(pattern_seq, 1, start - 1)
@@ -756,9 +769,8 @@ generate_colored_alignment <- function(pattern_seq, subject_seq, annotation_seq,
     # Compter les nucléotides réels dans ce segment
     pattern_bases_in_segment <- nchar(gsub("-", "", pattern_segment))
 
-    # Calculer les positions de début et fin
+    # Calculer les positions de début et fin du pattern
     if (pattern_bases_in_segment == 0) {
-      # Segment entièrement composé de gaps
       pattern_start <- pattern_bases_before
       pattern_end <- pattern_bases_before
     } else {
@@ -779,20 +791,23 @@ generate_colored_alignment <- function(pattern_seq, subject_seq, annotation_seq,
       NULL
     }
 
-    # Génération du tableau HTML pour ce segment
+    # MODIFICATION : Passer le fragment_type à la fonction de création du tableau
     alignment_table <- create_colored_alignment_table(
       subject_segment, pattern_segment, annotation_segment,
-      subject_start, subject_end, pattern_start, pattern_end,
-      segment_colors, segment_restrictions
+      subject_start_absolute, subject_end_absolute, pattern_start, pattern_end,
+      segment_colors, segment_restrictions, display_start_offset, start, fragment_type
     )
 
     html_lines <- c(html_lines, alignment_table)
 
-    # Version texte
+    # MODIFICATION : Version texte avec les nouveaux labels
+    subject_label <- "Carte"
+    pattern_label <- if (!is.null(fragment_type)) fragment_type else "Seq"
+
     text_lines <- c(text_lines, "")
-    text_lines <- c(text_lines, sprintf("Seq_1 %6d %s %d", subject_start, subject_segment, subject_end))
+    text_lines <- c(text_lines, sprintf("%s %6d %s %d", subject_label, subject_start_absolute, subject_segment, subject_end_absolute))
     text_lines <- c(text_lines, sprintf("       %s", annotation_segment))
-    text_lines <- c(text_lines, sprintf("Seq_2 %6d %s %d", pattern_start, pattern_segment, pattern_end))
+    text_lines <- c(text_lines, sprintf("%s %6d %s %d", pattern_label, pattern_start, pattern_segment, pattern_end))
   }
 
   html_lines <- c(html_lines, "</div>")
@@ -816,7 +831,9 @@ generate_colored_alignment <- function(pattern_seq, subject_seq, annotation_seq,
 #' @return HTML du tableau formaté
 create_colored_alignment_table <- function(subject_segment, pattern_segment, annotation_segment,
                                            subject_start, subject_end, pattern_start, pattern_end,
-                                           segment_colors, restriction_positions = NULL) {
+                                           segment_colors, restriction_positions = NULL,
+                                           display_start_offset = 1, segment_start_in_display = 1,
+                                           fragment_type = NULL) {
   # Décomposition en caractères
   subject_chars <- strsplit(subject_segment, "")[[1]]
   pattern_chars <- strsplit(pattern_segment, "")[[1]]
@@ -824,33 +841,42 @@ create_colored_alignment_table <- function(subject_segment, pattern_segment, ann
 
   # Styles de base
   base_cell_style <- CSS_STYLES$base_cell
-  prefix_style <- "font-family: Courier New, monospace; padding: 0; margin: 0; text-align: left; width: 100px; min-width: 100px; max-width: 100px; white-space: nowrap;"
-  suffix_style <- "font-family: Courier New, monospace; padding: 0 0 0 8px; margin: 0; text-align: left; width: 60px; min-width: 60px; max-width: 60px;"
-  table_style <- "border-collapse: collapse; margin: 10px 0; font-family: Courier New, monospace;"
+  prefix_label_style <- CSS_STYLES$prefix_label
+  prefix_number_style <- CSS_STYLES$prefix_number
+  suffix_style <- CSS_STYLES$suffix
+  table_style <- CSS_STYLES$table
 
   # Création des cellules
   subject_cells <- create_colored_sequence_cells(subject_chars, segment_colors, base_cell_style,
-                                                 restriction_positions, subject_start, "subject")
+                                                 restriction_positions, display_start_offset,
+                                                 segment_start_in_display, "subject")
   annotation_cells <- create_sequence_cells(annotation_chars, base_cell_style, 1, "annotation")
   pattern_cells <- create_sequence_cells(pattern_chars, base_cell_style, pattern_start, "pattern")
 
-  # Assemblage du tableau HTML
+  # Déterminer les labels
+  subject_label <- "Carte"
+  pattern_label <- if (!is.null(fragment_type)) fragment_type else "Seq"
+
+  # SOLUTION : Utiliser deux colonnes séparées pour le label et le chiffre
   table_html <- paste0(
     '<table style="', table_style, '">',
     "<tr>",
-    '<td style="', prefix_style, '">Seq_1 ', sprintf("%6d", subject_start), " </td>",
+    '<td style="', prefix_label_style, '">', subject_label, '</td>',
+    '<td style="', prefix_number_style, '">', subject_start, '</td>',
     paste(subject_cells, collapse = ""),
-    '<td style="', suffix_style, '">&nbsp;', subject_end, "</td>",
+    '<td style="', suffix_style, '">', subject_end, "</td>",
     "</tr>",
     "<tr>",
-    '<td style="', prefix_style, '"></td>',
+    '<td style="', prefix_label_style, '"></td>',
+    '<td style="', prefix_number_style, '"></td>',
     paste(annotation_cells, collapse = ""),
     '<td style="', suffix_style, '"></td>',
     "</tr>",
     "<tr>",
-    '<td style="', prefix_style, '">Seq_2 ', sprintf("%6d", pattern_start), " </td>",
+    '<td style="', prefix_label_style, '">', pattern_label, '</td>',
+    '<td style="', prefix_number_style, '">', pattern_start, '</td>',
     paste(pattern_cells, collapse = ""),
-    '<td style="', suffix_style, '">&nbsp;', pattern_end, "</td>",
+    '<td style="', suffix_style, '">', pattern_end, "</td>",
     "</tr>",
     "</table>"
   )
@@ -867,14 +893,15 @@ create_colored_alignment_table <- function(subject_segment, pattern_segment, ann
 #' @param sequence_type Type de séquence ("subject" ou "pattern")
 #' @return Vecteur de cellules HTML formatées
 create_colored_sequence_cells <- function(sequence_chars, colors, base_style, restriction_positions = NULL,
-                                          start_position = 1, sequence_type = "subject") {
+                                          display_start_offset = 1, segment_start_in_display = 1,
+                                          sequence_type = "subject") {
   cells <- character()
 
   for (i in seq_along(sequence_chars)) {
     style <- paste0(base_style, " position: relative; cursor: pointer;")
 
-    # Calcul de la position réelle dans la séquence
-    real_position <- start_position + i - 1
+    # CORRECTION CRUCIALE : Calcul de la position absolue dans la séquence de référence
+    real_position_absolute <- (display_start_offset - 1) + segment_start_in_display + i - 1
 
     # Application des couleurs normales
     if (!is.null(colors) && i <= length(colors) && !is.na(colors[i])) {
@@ -886,8 +913,8 @@ create_colored_sequence_cells <- function(sequence_chars, colors, base_style, re
       style <- paste0(style, " background-color: #D3D3D3; border: 1px solid #999; border-radius: 2px;")
     }
 
-    # Création du tooltip avec informations de position
-    tooltip_text <- paste0("Position: ", real_position, " | Nucléotide: ", sequence_chars[i])
+    # Création du tooltip avec la position absolue correcte
+    tooltip_text <- paste0("Position: ", real_position_absolute, " | Nucléotide: ", sequence_chars[i])
     if (sequence_type == "pattern") {
       tooltip_text <- paste0(tooltip_text, " (Séquence test)")
     } else {
@@ -1323,4 +1350,279 @@ create_svg_rect <- function(x, y, width, height, fill, title = "", opacity = 0.8
   return(paste0('<rect x="', x, '" y="', y, '" width="', max(width, 2),
                 '" height="', height, '" fill="', fill, '" opacity="', opacity, '">',
                 if(title != "") paste0('<title>', title, '</title>'), '</rect>'))
+}
+
+
+#' Validation et nettoyage d'une séquence personnalisée (oligo, primer, fragment, enzyme)
+#' @param input_sequence Séquence saisie par l'utilisateur
+#' @return Séquence nettoyée et validée, ou NULL si invalide
+validate_enzyme_sequence <- function(input_sequence) {
+  if (is.null(input_sequence) || input_sequence == "") {
+    return(NULL)
+  }
+
+  # Nettoyage : supprimer espaces, retours à la ligne, convertir en majuscules
+  cleaned_seq <- toupper(gsub("[^ATCGN]", "", input_sequence))
+
+  # Vérification : au moins 3 caractères, seulement ATCG (N autorisé pour pattern spéciaux)
+  if (nchar(cleaned_seq) < 3) {
+    return(NULL)
+  }
+
+  # Vérifier que ce sont bien des nucléotides
+  if (!grepl("^[ATCGN]+$", cleaned_seq)) {
+    return(NULL)
+  }
+
+  return(cleaned_seq)
+}
+
+# ==============================================================================
+# FONCTIONS DE GESTION DES FRAGMENTS 5p/int/3p
+# ==============================================================================
+
+#' Extraction du type de fragment depuis le nom de fichier
+#' @param filename Nom du fichier
+#' @return Type de fragment (5p, int1, int2, 3p, etc.) ou NULL
+extract_fragment_type <- function(filename) {
+  # Enlever l'extension
+  base_name <- gsub("\\.(seq|ab1)$", "", basename(filename), ignore.case = TRUE)
+
+  # Prendre ce qui est avant le premier underscore
+  first_part <- strsplit(base_name, "_")[[1]][1]
+
+  # Extraire le type de fragment avec regex
+  if (grepl("5p", first_part, ignore.case = TRUE)) {
+    return("5p")
+  } else if (grepl("3p", first_part, ignore.case = TRUE)) {
+    return("3p")
+  } else if (grepl("int", first_part, ignore.case = TRUE)) {
+    # Extraire le numéro d'int si présent
+    int_match <- regexpr("int\\d*", first_part, ignore.case = TRUE)
+    if (int_match > 0) {
+      return(tolower(regmatches(first_part, int_match)))
+    }
+    return("int")
+  }
+
+  return(NULL)
+}
+
+#' Tri des fragments dans l'ordre correct
+#' @param fragments_list Liste des fragments avec leurs types
+#' @return Liste triée dans l'ordre 5p → int1 → int2 → ... → 3p
+sort_fragments_by_type <- function(fragments_list) {
+  # Définir l'ordre de priorité
+  type_order <- c("5p", "int", "int1", "int2", "int3", "int4", "int5", "3p")
+
+  # Trier selon cet ordre
+  sorted_fragments <- fragments_list[order(match(sapply(fragments_list, function(x) x$type), type_order))]
+
+  return(sorted_fragments)
+}
+
+#' Organisation des fichiers par CLONE d'abord, puis fragments à l'intérieur
+#' @param file_paths Vecteur des chemins complets des fichiers
+#' @param file_names Vecteur des noms d'affichage
+#' @return Liste organisée par clones, puis fragments à l'intérieur
+organize_files_by_fragments <- function(file_paths, file_names) {
+  cat("=== DEBUG organize_files_by_fragments ===\n")
+  cat("file_paths:", length(file_paths), "\n")
+  cat("file_names:", length(file_names), "\n")
+
+  if (length(file_paths) == 0) {
+    cat("Aucun fichier à organiser\n")
+    return(list())
+  }
+
+  # Vérifier que les longueurs correspondent
+  if (length(file_paths) != length(file_names)) {
+    cat("ERREUR: longueurs différentes file_paths et file_names\n")
+    return(list())
+  }
+
+  # Étape 1 : Regrouper par clone d'abord
+  clones_temp <- list()
+
+  for (i in seq_along(file_paths)) {
+    file_path <- file_paths[i]
+    display_name <- file_names[i]
+
+    cat("Traitement fichier:", basename(file_path), "\n")
+
+    # Extraire le clone (entre avant-dernier et dernier underscore)
+    clone_info <- extract_clone_group(file_path)
+    clone_id <- clone_info$group  # A1, A2, etc.
+
+    cat("  Clone ID:", clone_id, "\n")
+
+    if (is.null(clones_temp[[clone_id]])) {
+      clones_temp[[clone_id]] <- list(
+        clone_id = clone_id,
+        files = character(),
+        paths = character(),
+        display_names = character(),
+        fragment_types = character()
+      )
+    }
+
+    # Extraire le type de fragment
+    fragment_type <- extract_fragment_type(file_path)
+    if (is.null(fragment_type)) {
+      fragment_type <- "unknown"
+    }
+
+    cat("  Fragment type:", fragment_type, "\n")
+
+    clones_temp[[clone_id]]$files <- c(clones_temp[[clone_id]]$files, basename(file_path))
+    clones_temp[[clone_id]]$paths <- c(clones_temp[[clone_id]]$paths, file_path)
+    clones_temp[[clone_id]]$display_names <- c(clones_temp[[clone_id]]$display_names, display_name)
+    clones_temp[[clone_id]]$fragment_types <- c(clones_temp[[clone_id]]$fragment_types, fragment_type)
+  }
+
+  cat("Clones temporaires créés:", length(clones_temp), "\n")
+
+  # Étape 2 : À l'intérieur de chaque clone, organiser par fragments
+  clones_final <- list()
+
+  for (clone_id in names(clones_temp)) {
+    cat("Traitement clone:", clone_id, "\n")
+
+    clone_data <- clones_temp[[clone_id]]
+
+    # Regrouper les fichiers de ce clone par fragment
+    fragments_in_clone <- list()
+
+    for (i in seq_along(clone_data$paths)) {
+      fragment_type <- clone_data$fragment_types[i]
+
+      if (is.null(fragments_in_clone[[fragment_type]])) {
+        fragments_in_clone[[fragment_type]] <- list(
+          type = fragment_type,
+          files = character(),
+          paths = character(),
+          display_names = character()
+        )
+      }
+
+      fragments_in_clone[[fragment_type]]$files <- c(fragments_in_clone[[fragment_type]]$files, clone_data$files[i])
+      fragments_in_clone[[fragment_type]]$paths <- c(fragments_in_clone[[fragment_type]]$paths, clone_data$paths[i])
+      fragments_in_clone[[fragment_type]]$display_names <- c(fragments_in_clone[[fragment_type]]$display_names, clone_data$display_names[i])
+    }
+
+    cat("  Fragments dans ce clone:", length(fragments_in_clone), "\n")
+
+    # Trier les fragments dans l'ordre correct (5p → int → 3p)
+    type_order <- c("5p", "int", "int1", "int2", "int3", "int4", "int5", "3p", "unknown")
+    fragment_types_found <- names(fragments_in_clone)
+
+    if (length(fragment_types_found) > 0) {
+      sorted_fragment_types <- fragment_types_found[order(match(fragment_types_found, type_order))]
+      fragments_in_clone <- fragments_in_clone[sorted_fragment_types]
+    }
+
+    # Créer la structure finale pour ce clone
+    clones_final[[clone_id]] <- list(
+      clone_id = clone_id,
+      fragments = fragments_in_clone,
+      # Données brutes pour compatibilité
+      files = clone_data$files,
+      paths = clone_data$paths,
+      display_names = clone_data$display_names
+    )
+  }
+
+  cat("Clones finaux créés:", length(clones_final), "\n")
+
+  # Étape 3 : Trier les clones par nom (A1, A2, etc.)
+  if (length(clones_final) > 0) {
+    sorted_clones <- clones_final[order(names(clones_final))]
+  } else {
+    sorted_clones <- list()
+  }
+
+  cat("=== FIN DEBUG organize ===\n")
+
+  return(sorted_clones)
+}
+
+#' Calcul du reverse complément d'une séquence
+#' @param sequence Séquence ADN (DNAString ou character)
+#' @return Séquence reverse complément
+reverse_complement <- function(sequence) {
+  if (class(sequence)[1] == "DNAString") {
+    return(Biostrings::reverseComplement(sequence))
+  } else {
+    # Conversion en DNAString puis reverse complément
+    dna_seq <- Biostrings::DNAString(sequence)
+    return(as.character(Biostrings::reverseComplement(dna_seq)))
+  }
+}
+
+#' Calcul de la région d'affichage pour les fragments avec contexte spécifique
+#' @param fragment_type Type de fragment (5p, int, 3p)
+#' @param sequence_length Longueur de la séquence
+#' @param enzyme1_sites Sites de l'enzyme 1
+#' @param enzyme2_sites Sites de l'enzyme 2
+#' @param context_length Contexte en nucléotides (défaut: 200)
+#' @return Liste avec start et end
+calculate_fragment_display_region <- function(fragment_type, sequence_length, enzyme1_sites = NULL, enzyme2_sites = NULL, context_length = 200) {
+
+  if (fragment_type == "5p") {
+    # Pour 5p : 200nt avant le premier enzyme1, jusqu'à la fin de la séquence
+    if (!is.null(enzyme1_sites) && length(enzyme1_sites) > 0) {
+      first_site <- min(enzyme1_sites)
+      start_pos <- max(1, first_site - context_length)
+      end_pos <- sequence_length
+    } else {
+      # Pas d'enzyme trouvé, afficher toute la séquence
+      start_pos <- 1
+      end_pos <- sequence_length
+    }
+
+  } else if (fragment_type == "3p") {
+    # Pour 3p : du début jusqu'à 200nt après le dernier enzyme2
+    if (!is.null(enzyme2_sites) && length(enzyme2_sites) > 0) {
+      last_site <- max(enzyme2_sites)
+      start_pos <- 1
+      end_pos <- min(sequence_length, last_site + context_length)
+    } else {
+      # Pas d'enzyme trouvé, afficher toute la séquence
+      start_pos <- 1
+      end_pos <- sequence_length
+    }
+
+  } else {
+    # Pour int : 200nt avant le début jusqu'à 200nt après la fin
+    start_pos <- max(1, 1 - context_length)
+    end_pos <- min(sequence_length, sequence_length + context_length)
+
+    # En pratique, pour int, on affiche souvent toute la séquence
+    start_pos <- 1
+    end_pos <- sequence_length
+  }
+
+  return(list(start = start_pos, end = end_pos))
+}
+
+#' Détermination des enzymes à chercher selon le type de fragment
+#' @param fragment_type Type de fragment
+#' @param enzyme1_seq Séquence enzyme 1
+#' @param enzyme2_seq Séquence enzyme 2
+#' @return Liste avec les enzymes à chercher dans ce fragment
+get_enzymes_for_fragment <- function(fragment_type, enzyme1_seq, enzyme2_seq) {
+  enzymes_to_search <- list()
+
+  if (fragment_type == "5p" && !is.null(enzyme1_seq) && enzyme1_seq != "") {
+    enzymes_to_search$enzyme1 <- enzyme1_seq
+  }
+
+  if (fragment_type == "3p" && !is.null(enzyme2_seq) && enzyme2_seq != "") {
+    enzymes_to_search$enzyme2 <- enzyme2_seq
+  }
+
+  # Les fragments int n'ont généralement pas d'enzymes spécifiques
+  # mais on peut les chercher si nécessaire
+
+  return(enzymes_to_search)
 }
