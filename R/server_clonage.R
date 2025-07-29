@@ -40,32 +40,58 @@ server_clonage <- function(input, output, session) {
   # CONFIGURATION DES CHEMINS
   # ==============================================================================
 
-  # Utiliser la configuration centralisée qui existe déjà
-  config <- get_config()
-  xdna_dir <- config$xdna_dir
-  seq_base_dir <- config$seq_dir
+  # Utiliser la configuration centralisée avec gestion d'erreur
+  tryCatch({
+    config <- get_config()
+    xdna_dir <- config$xdna_dir
+    seq_base_dir <- config$seq_dir
 
-  cat("📁 Chemins configurés via get_config():\n")
-  cat("   - Environnement détecté:", config$environment, "\n")
-  cat("   - GenBank (.gb):", xdna_dir, "\n")
-  cat("   - Séquences (.seq):", seq_base_dir, "\n")
+    cat("📁 Chemins configurés via get_config():\n")
+    cat("   - Environnement détecté:", config$environment, "\n")
+    cat("   - GenBank (.gb):", xdna_dir, "\n")
+    cat("   - Séquences (.seq):", seq_base_dir, "\n")
 
-  # Debug spécifique pour les fichiers .gb
-  if (dir.exists(xdna_dir)) {
-    gb_files <- list.files(xdna_dir, pattern = "\\.gb$", full.names = FALSE)
-    cat("   - Fichiers .gb trouvés:", length(gb_files), "\n")
-    if (length(gb_files) > 0) {
-      cat("   - Exemples:", paste(head(gb_files, 3), collapse = ", "), "\n")
+  }, error = function(e) {
+    cat("❌ ERREUR lors de get_config():", e$message, "\n")
+    # Fallback vers l'ancienne méthode
+    if (dir.exists("/mnt/carte_nouveaux_clonages")) {
+      xdna_dir <- "/mnt/carte_nouveaux_clonages"
+      seq_base_dir <- "/data/production/SEQ"
+    } else if (dir.exists("R:/Production/Labo YEAST/Demandes du service/carte_nouveaux_clonages")) {
+      xdna_dir <- "R:/Production/Labo YEAST/Demandes du service/carte_nouveaux_clonages"
+      seq_base_dir <- "P:/SEQ"
     } else {
-      cat("   - ❌ AUCUN FICHIER .gb dans", xdna_dir, "\n")
-      all_files <- list.files(xdna_dir, full.names = FALSE)
-      cat("   - Contenu du dossier:", paste(head(all_files, 10), collapse = ", "), "\n")
+      # Chemins par défaut même s'ils n'existent pas
+      xdna_dir <- "/mnt/carte_nouveaux_clonages"
+      seq_base_dir <- "/data/production/SEQ"
     }
-  } else {
-    cat("   - ❌ Dossier GenBank non accessible:", xdna_dir, "\n")
-    # Afficher les informations de debug complètes
-    display_config_info(config)
-  }
+    cat("   - Fallback - GenBank (.gb):", xdna_dir, "\n")
+    cat("   - Fallback - Séquences (.seq):", seq_base_dir, "\n")
+  })
+
+  # Debug spécifique pour les fichiers .gb (non bloquant)
+  tryCatch({
+    if (dir.exists(xdna_dir)) {
+      gb_files <- list.files(xdna_dir, pattern = "\\.gb$", full.names = FALSE)
+      cat("   - Fichiers .gb trouvés:", length(gb_files), "\n")
+      if (length(gb_files) > 0) {
+        cat("   - Exemples:", paste(head(gb_files, 3), collapse = ", "), "\n")
+      } else {
+        cat("   - ⚠️ Aucun fichier .gb dans", xdna_dir, "\n")
+        all_files <- list.files(xdna_dir, full.names = FALSE)
+        if (length(all_files) > 0) {
+          cat("   - Contenu du dossier:", paste(head(all_files, 5), collapse = ", "), "\n")
+        } else {
+          cat("   - Dossier vide\n")
+        }
+      }
+    } else {
+      cat("   - ⚠️ Dossier GenBank non accessible:", xdna_dir, "\n")
+    }
+  }, error = function(e) {
+    cat("   - ⚠️ Erreur lors de la vérification des fichiers .gb:", e$message, "\n")
+  })
+
 
   # ==============================================================================
   # FONCTIONS DE RECHERCHE
@@ -164,21 +190,40 @@ server_clonage <- function(input, output, session) {
   # ==============================================================================
 
   get_available_gb_files <- function() {
-    gb_files <- list.files(xdna_dir, pattern = "\\.gb$", full.names = FALSE)
-    return(gb_files)
+    tryCatch({
+      if (!dir.exists(xdna_dir)) {
+        cat("⚠️ get_available_gb_files: Dossier non accessible:", xdna_dir, "\n")
+        return(character())
+      }
+
+      gb_files <- list.files(xdna_dir, pattern = "\\.gb$", full.names = FALSE)
+      cat("📄 Fichiers .gb trouvés:", length(gb_files), "\n")
+
+      return(gb_files)
+
+    }, error = function(e) {
+      cat("❌ Erreur dans get_available_gb_files:", e$message, "\n")
+      return(character())
+    })
   }
 
+  # Initialisation sécurisée
   observe({
-    gb_files <- get_available_gb_files()
-    updateSelectInput(session, "carte_xdna", choices = gb_files)
+    tryCatch({
+      gb_files <- get_available_gb_files()
+      if (length(gb_files) == 0) {
+        gb_files <- c("Aucun fichier .gb trouvé" = "")
+        showNotification("⚠️ Aucun fichier GenBank trouvé. Vérifiez les montages.",
+                         type = "warning", duration = 10)
+      }
+      updateSelectInput(session, "carte_xdna", choices = gb_files)
+    }, error = function(e) {
+      cat("❌ Erreur lors de l'initialisation des fichiers GB:", e$message, "\n")
+      updateSelectInput(session, "carte_xdna", choices = c("Erreur de chargement" = ""))
+      showNotification("❌ Erreur lors du chargement des fichiers GenBank",
+                       type = "error", duration = 10)
+    })
   })
-
-  observeEvent(input$refresh_files, {
-    gb_files <- get_available_gb_files()
-    updateSelectInput(session, "carte_xdna", choices = gb_files)
-    showNotification("📁 Liste des fichiers GenBank mise à jour !", type = "message", duration = 2)
-  })
-
   # ==============================================================================
   # SITES DE RESTRICTION
   # ==============================================================================
