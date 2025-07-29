@@ -40,23 +40,32 @@ server_clonage <- function(input, output, session) {
   # CONFIGURATION DES CHEMINS
   # ==============================================================================
 
-  if (dir.exists("/mnt/carte_nouveaux_clonages")) {
-    xdna_dir <- "/mnt/carte_nouveaux_clonages"                                            # SERVEUR DEBIAN
-    seq_base_dir <- "/data/production/SEQ"
-  } else if (dir.exists("../mnt/carte_nouveaux_clonages")) {
-    xdna_dir <- "../mnt/carte_nouveaux_clonages"                                          # SERVEUR DEBIAN ALT
-    seq_base_dir <- "../data/production/SEQ"
-  } else if (dir.exists("R:/Production/Labo YEAST/Demandes du service/carte_nouveaux_clonages")) {
-    xdna_dir <- "R:/Production/Labo YEAST/Demandes du service/carte_nouveaux_clonages"   # DÉVELOPPEMENT WINDOWS
-    seq_base_dir <- "P:/SEQ"
-  } else {
-    xdna_dir <- "/mnt/carte_nouveaux_clonages"                                            # FALLBACK SERVEUR
-    seq_base_dir <- "/data/production/SEQ"
-  }
+  # Utiliser la configuration centralisée qui existe déjà
+  config <- get_config()
+  xdna_dir <- config$xdna_dir
+  seq_base_dir <- config$seq_dir
 
-  cat("📁 Chemins configurés:\n")
+  cat("📁 Chemins configurés via get_config():\n")
+  cat("   - Environnement détecté:", config$environment, "\n")
   cat("   - GenBank (.gb):", xdna_dir, "\n")
   cat("   - Séquences (.seq):", seq_base_dir, "\n")
+
+  # Debug spécifique pour les fichiers .gb
+  if (dir.exists(xdna_dir)) {
+    gb_files <- list.files(xdna_dir, pattern = "\\.gb$", full.names = FALSE)
+    cat("   - Fichiers .gb trouvés:", length(gb_files), "\n")
+    if (length(gb_files) > 0) {
+      cat("   - Exemples:", paste(head(gb_files, 3), collapse = ", "), "\n")
+    } else {
+      cat("   - ❌ AUCUN FICHIER .gb dans", xdna_dir, "\n")
+      all_files <- list.files(xdna_dir, full.names = FALSE)
+      cat("   - Contenu du dossier:", paste(head(all_files, 10), collapse = ", "), "\n")
+    }
+  } else {
+    cat("   - ❌ Dossier GenBank non accessible:", xdna_dir, "\n")
+    # Afficher les informations de debug complètes
+    display_config_info(config)
+  }
 
   # ==============================================================================
   # FONCTIONS DE RECHERCHE
