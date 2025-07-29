@@ -46,52 +46,88 @@ server_clonage <- function(input, output, session) {
     xdna_dir <- config$xdna_dir
     seq_base_dir <- config$seq_dir
 
-    cat("📁 Chemins configurés via get_config():\n")
-    cat("   - Environnement détecté:", config$environment, "\n")
-    cat("   - GenBank (.gb):", xdna_dir, "\n")
-    cat("   - Séquences (.seq):", seq_base_dir, "\n")
+    cat("📁 Configuration détectée:\n")
+    cat("   - Environnement:", config$environment, "\n")
+    cat("   - OS type:", .Platform$OS.type, "\n")
+    cat("   - GenBank dir:", xdna_dir, "\n")
+    cat("   - Sequences dir:", seq_base_dir, "\n")
 
   }, error = function(e) {
     cat("❌ ERREUR lors de get_config():", e$message, "\n")
-    # Fallback vers l'ancienne méthode
-    if (dir.exists("/mnt/carte_nouveaux_clonages")) {
-      xdna_dir <- "/mnt/carte_nouveaux_clonages"
-      seq_base_dir <- "/data/production/SEQ"
-    } else if (dir.exists("R:/Production/Labo YEAST/Demandes du service/carte_nouveaux_clonages")) {
-      xdna_dir <- "R:/Production/Labo YEAST/Demandes du service/carte_nouveaux_clonages"
-      seq_base_dir <- "P:/SEQ"
-    } else {
-      # Chemins par défaut même s'ils n'existent pas
-      xdna_dir <- "/mnt/carte_nouveaux_clonages"
-      seq_base_dir <- "/data/production/SEQ"
-    }
-    cat("   - Fallback - GenBank (.gb):", xdna_dir, "\n")
-    cat("   - Fallback - Séquences (.seq):", seq_base_dir, "\n")
+    xdna_dir <- "/mnt/carte_nouveaux_clonages"
+    seq_base_dir <- "/data/production/SEQ"
   })
 
-  # Debug spécifique pour les fichiers .gb (non bloquant)
-  tryCatch({
-    if (dir.exists(xdna_dir)) {
-      gb_files <- list.files(xdna_dir, pattern = "\\.gb$", full.names = FALSE)
-      cat("   - Fichiers .gb trouvés:", length(gb_files), "\n")
-      if (length(gb_files) > 0) {
-        cat("   - Exemples:", paste(head(gb_files, 3), collapse = ", "), "\n")
-      } else {
-        cat("   - ⚠️ Aucun fichier .gb dans", xdna_dir, "\n")
-        all_files <- list.files(xdna_dir, full.names = FALSE)
-        if (length(all_files) > 0) {
-          cat("   - Contenu du dossier:", paste(head(all_files, 5), collapse = ", "), "\n")
-        } else {
-          cat("   - Dossier vide\n")
+  # Test d'accès détaillé au dossier
+  cat("\n🔍 TEST D'ACCÈS DÉTAILLÉ:\n")
+  cat("Dossier testé:", xdna_dir, "\n")
+
+  # Test 1: Existence du dossier
+  dir_exists <- dir.exists(xdna_dir)
+  cat("1. Dossier existe:", dir_exists, "\n")
+
+  if (dir_exists) {
+    # Test 2: Permissions de lecture
+    tryCatch({
+      file_info <- file.info(xdna_dir)
+      cat("2. Info dossier accessible:", !is.na(file_info$isdir), "\n")
+      cat("   - Est un dossier:", file_info$isdir, "\n")
+      cat("   - Taille:", file_info$size, "\n")
+    }, error = function(e) {
+      cat("2. ❌ Erreur file.info:", e$message, "\n")
+    })
+
+    # Test 3: Liste tous les fichiers (sans pattern)
+    tryCatch({
+      all_files <- list.files(xdna_dir, full.names = FALSE)
+      cat("3. Fichiers listés sans pattern:", length(all_files), "\n")
+      if (length(all_files) > 0) {
+        cat("   - Premiers fichiers:", paste(head(all_files, 5), collapse = ", "), "\n")
+
+        # Chercher spécifiquement les .gb
+        gb_files_manual <- all_files[grepl("\\.gb$", all_files, ignore.case = TRUE)]
+        cat("   - Fichiers .gb trouvés manuellement:", length(gb_files_manual), "\n")
+        if (length(gb_files_manual) > 0) {
+          cat("   - Fichiers .gb:", paste(gb_files_manual, collapse = ", "), "\n")
         }
-      }
-    } else {
-      cat("   - ⚠️ Dossier GenBank non accessible:", xdna_dir, "\n")
-    }
-  }, error = function(e) {
-    cat("   - ⚠️ Erreur lors de la vérification des fichiers .gb:", e$message, "\n")
-  })
 
+        # Chercher les .xdna aussi
+        xdna_files <- all_files[grepl("\\.xdna$", all_files, ignore.case = TRUE)]
+        cat("   - Fichiers .xdna trouvés:", length(xdna_files), "\n")
+      } else {
+        cat("   - ❌ Aucun fichier listé\n")
+      }
+    }, error = function(e) {
+      cat("3. ❌ Erreur list.files:", e$message, "\n")
+    })
+
+    # Test 4: Test du pattern exact
+    tryCatch({
+      gb_files_pattern <- list.files(xdna_dir, pattern = "\\.gb$", full.names = FALSE, ignore.case = TRUE)
+      cat("4. Fichiers avec pattern '\\.gb$':", length(gb_files_pattern), "\n")
+      if (length(gb_files_pattern) > 0) {
+        cat("   - Trouvés:", paste(gb_files_pattern, collapse = ", "), "\n")
+      }
+    }, error = function(e) {
+      cat("4. ❌ Erreur avec pattern:", e$message, "\n")
+    })
+
+    # Test 5: Accès à un fichier spécifique
+    tryCatch({
+      test_file <- file.path(xdna_dir, "GlyP000344_A01_pET2bHis-TEV.gb")
+      file_exists <- file.exists(test_file)
+      cat("5. Fichier test accessible:", file_exists, "\n")
+      if (file_exists) {
+        file_readable <- file.access(test_file, 4) == 0  # 4 = lecture
+        cat("   - Fichier lisible:", file_readable, "\n")
+      }
+    }, error = function(e) {
+      cat("5. ❌ Erreur test fichier:", e$message, "\n")
+    })
+
+  } else {
+    cat("❌ Dossier non accessible - tests d'accès ignorés\n")
+  }
 
   # ==============================================================================
   # FONCTIONS DE RECHERCHE
@@ -190,16 +226,38 @@ server_clonage <- function(input, output, session) {
   # ==============================================================================
 
   get_available_gb_files <- function() {
+    cat("\n📄 get_available_gb_files() appelée\n")
+
     tryCatch({
       if (!dir.exists(xdna_dir)) {
-        cat("⚠️ get_available_gb_files: Dossier non accessible:", xdna_dir, "\n")
+        cat("⚠️ Dossier non accessible:", xdna_dir, "\n")
         return(character())
       }
 
-      gb_files <- list.files(xdna_dir, pattern = "\\.gb$", full.names = FALSE)
-      cat("📄 Fichiers .gb trouvés:", length(gb_files), "\n")
+      # Essayer plusieurs méthodes
+      cat("Méthode 1 - Pattern standard:\n")
+      gb_files1 <- list.files(xdna_dir, pattern = "\\.gb$", full.names = FALSE)
+      cat("  Trouvés:", length(gb_files1), "\n")
 
-      return(gb_files)
+      cat("Méthode 2 - Pattern ignore.case:\n")
+      gb_files2 <- list.files(xdna_dir, pattern = "\\.gb$", full.names = FALSE, ignore.case = TRUE)
+      cat("  Trouvés:", length(gb_files2), "\n")
+
+      cat("Méthode 3 - Tous fichiers + filtrage:\n")
+      all_files <- list.files(xdna_dir, full.names = FALSE)
+      gb_files3 <- all_files[grepl("\\.gb$", all_files, ignore.case = TRUE)]
+      cat("  Trouvés:", length(gb_files3), "\n")
+
+      # Utiliser la méthode qui fonctionne
+      final_files <- if (length(gb_files2) > 0) gb_files2 else gb_files3
+
+      if (length(final_files) > 0) {
+        cat("✅ Fichiers .gb finaux:", paste(final_files, collapse = ", "), "\n")
+      } else {
+        cat("❌ Aucun fichier .gb trouvé avec aucune méthode\n")
+      }
+
+      return(final_files)
 
     }, error = function(e) {
       cat("❌ Erreur dans get_available_gb_files:", e$message, "\n")
