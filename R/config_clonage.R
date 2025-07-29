@@ -38,17 +38,17 @@ get_config <- function() {
 
   if (env == "development") {
     # ========== ENVIRONNEMENT DE DÉVELOPPEMENT ==========
-    # Chemins pour développement local (Windows/Mac/Linux)
+    # Chemins pour développement local (Windows)
     config <- list(
-      xdna_dir = "P:/SEQ/Atest_cae",      # Dossier fichiers GenBank (.gb)
+      xdna_dir = "R:/Production/Labo YEAST/Demandes du service/carte_nouveaux_clonages",  # NOUVEAU CHEMIN WINDOWS
       seq_dir = "P:/SEQ",                 # Dossier racine séquences (.seq)
       environment = "development"
     )
 
     # Chemins alternatifs pour dev Linux/Mac
     if (.Platform$OS.type != "windows") {
+      config$xdna_dir <- "/mnt/carte_nouveaux_clonages"  # NOUVEAU CHEMIN LINUX
       if (dir.exists("data/genbank")) {
-        config$xdna_dir <- "data/genbank"
         config$seq_dir <- "data/seq"
       }
     }
@@ -57,7 +57,7 @@ get_config <- function() {
     # ========== ENVIRONNEMENT DE PRODUCTION ==========
     # Chemins pour production (Docker/ShinyProxy)
     config <- list(
-      xdna_dir = "/data/production/SEQ/Atest_cae",    # Fichiers GenBank (.gb)
+      xdna_dir = "/mnt/carte_nouveaux_clonages",      # NOUVEAU CHEMIN MONTÉ
       seq_dir = "/data/production/SEQ",               # Dossiers avec fichiers .seq
       environment = "production"
     )
@@ -65,14 +65,14 @@ get_config <- function() {
     # Vérification des chemins de production et fallbacks
     if (!dir.exists(config$xdna_dir)) {
       # Essayer des chemins alternatifs
-      if (dir.exists("/data/SEQ/Atest_cae")) {
-        config$xdna_dir <- "/data/SEQ/Atest_cae"
+      if (dir.exists("/data/SEQ/carte_nouveaux_clonages")) {
+        config$xdna_dir <- "/data/SEQ/carte_nouveaux_clonages"
         config$seq_dir <- "/data/SEQ"
-      } else if (dir.exists("../data/production/SEQ/Atest_cae")) {
-        config$xdna_dir <- "../data/production/SEQ/Atest_cae"
+      } else if (dir.exists("../data/production/SEQ/carte_nouveaux_clonages")) {
+        config$xdna_dir <- "../data/production/SEQ/carte_nouveaux_clonages"
         config$seq_dir <- "../data/production/SEQ"
-      } else if (dir.exists("../data/SEQ/Atest_cae")) {
-        config$xdna_dir <- "../data/SEQ/Atest_cae"
+      } else if (dir.exists("../data/SEQ/carte_nouveaux_clonages")) {
+        config$xdna_dir <- "../data/SEQ/carte_nouveaux_clonages"
         config$seq_dir <- "../data/SEQ"
       }
     }
@@ -114,8 +114,11 @@ display_config_info <- function(config) {
   cat("   - GenBank accessible:", dir.exists(config$xdna_dir), "\n")
   cat("   - Séquences accessibles:", dir.exists(config$seq_dir), "\n")
 
-  # Debug détaillé des montages
-  cat("\n🔍 Debug montages:\n")
+  # Debug détaillé des montages - MISE À JOUR
+  cat("\n🔍 Debug montages carte_nouveaux_clonages:\n")
+  cat("   - /mnt existe:", dir.exists("/mnt"), "\n")
+  cat("   - /mnt/carte_nouveaux_clonages existe:", dir.exists("/mnt/carte_nouveaux_clonages"), "\n")
+  cat("   - R:/Production/Labo YEAST/... existe:", dir.exists("R:/Production/Labo YEAST/Demandes du service/carte_nouveaux_clonages"), "\n")
   cat("   - /data existe:", dir.exists("/data"), "\n")
   cat("   - /data/production existe:", dir.exists("/data/production"), "\n")
   cat("   - /data/production/SEQ existe:", dir.exists("/data/production/SEQ"), "\n")
@@ -126,9 +129,15 @@ display_config_info <- function(config) {
     cat("   - Contenu de /data:", paste(data_content, collapse = ", "), "\n")
   }
 
+  # Lister le contenu de /mnt si accessible
+  if (dir.exists("/mnt")) {
+    mnt_content <- list.dirs("/mnt", recursive = FALSE, full.names = FALSE)
+    cat("   - Contenu de /mnt:", paste(mnt_content, collapse = ", "), "\n")
+  }
+
   # Lister les points de montage
   cat("\n💽 Points de montage disponibles:\n")
-  mount_points <- c("/", "/data", "/srv", "/tmp", "/var", "/home")
+  mount_points <- c("/", "/data", "/srv", "/tmp", "/var", "/home", "/mnt")
   for (mp in mount_points) {
     if (dir.exists(mp)) {
       content <- try(list.dirs(mp, recursive = FALSE, full.names = FALSE), silent = TRUE)
@@ -138,23 +147,56 @@ display_config_info <- function(config) {
     }
   }
 
-  # Affichage du contenu des dossiers (si accessibles)
+  # Affichage du contenu des dossiers GenBank (si accessibles)
   if (dir.exists(config$xdna_dir)) {
     gb_files <- list.files(config$xdna_dir, pattern = "\\.gb$")
-    cat("\n📄 Fichiers GenBank:\n")
+    cat("\n📄 Fichiers GenBank dans", config$xdna_dir, ":\n")
     cat("   - Fichiers .gb trouvés:", length(gb_files), "\n")
     if (length(gb_files) > 0) {
       cat("     Exemples:", paste(head(gb_files, 3), collapse = ", "), "\n")
     }
+  } else {
+    cat("\n❌ Dossier GenBank non accessible:", config$xdna_dir, "\n")
   }
 
+  # Vérifications spécifiques pour les nouveaux chemins
+  cat("\n🔍 Vérifications spécifiques nouveaux chemins:\n")
+
+  # Chemin Windows
+  windows_path <- "R:/Production/Labo YEAST/Demandes du service/carte_nouveaux_clonages"
+  if (dir.exists(windows_path)) {
+    gb_files_win <- list.files(windows_path, pattern = "\\.gb$")
+    cat("   - Windows path accessible:", length(gb_files_win), "fichiers .gb\n")
+    if (length(gb_files_win) > 0) {
+      cat("     Exemples:", paste(head(gb_files_win, 3), collapse = ", "), "\n")
+    }
+  } else {
+    cat("   - Windows path non accessible:", windows_path, "\n")
+  }
+
+  # Chemin Linux monté
+  linux_path <- "/mnt/carte_nouveaux_clonages"
+  if (dir.exists(linux_path)) {
+    gb_files_linux <- list.files(linux_path, pattern = "\\.gb$")
+    cat("   - Linux mount accessible:", length(gb_files_linux), "fichiers .gb\n")
+    if (length(gb_files_linux) > 0) {
+      cat("     Exemples:", paste(head(gb_files_linux, 3), collapse = ", "), "\n")
+    }
+  } else {
+    cat("   - Linux mount non accessible:", linux_path, "\n")
+  }
+
+  # Affichage du contenu des dossiers séquences (si accessibles)
   if (dir.exists(config$seq_dir)) {
     seq_folders <- list.dirs(config$seq_dir, recursive = FALSE, full.names = FALSE)
-    cat("\n📁 Dossiers séquences:\n")
+    cat("\n📁 Dossiers séquences dans", config$seq_dir, ":\n")
     cat("   - Dossiers trouvés:", length(seq_folders), "\n")
     if (length(seq_folders) > 0) {
       cat("     Exemples:", paste(head(seq_folders, 3), collapse = ", "), "\n")
     }
+  } else {
+    cat("\n❌ Dossier séquences non accessible:", config$seq_dir, "\n")
   }
+
   cat("══════════════════════════════\n")
 }

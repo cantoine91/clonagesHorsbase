@@ -40,15 +40,18 @@ server_clonage <- function(input, output, session) {
   # CONFIGURATION DES CHEMINS
   # ==============================================================================
 
-  if (dir.exists("/data/production/SEQ")) {
-    xdna_dir <- "/data/production/SEQ/Atest_cae"
+  if (dir.exists("/mnt/carte_nouveaux_clonages")) {
+    xdna_dir <- "/mnt/carte_nouveaux_clonages"                                            # SERVEUR DEBIAN
     seq_base_dir <- "/data/production/SEQ"
-  } else if (dir.exists("../data/production/SEQ")) {
-    xdna_dir <- "../data/production/SEQ/Atest_cae"
+  } else if (dir.exists("../mnt/carte_nouveaux_clonages")) {
+    xdna_dir <- "../mnt/carte_nouveaux_clonages"                                          # SERVEUR DEBIAN ALT
     seq_base_dir <- "../data/production/SEQ"
-  } else {
-    xdna_dir <- "P:/SEQ/Atest_cae"
+  } else if (dir.exists("R:/Production/Labo YEAST/Demandes du service/carte_nouveaux_clonages")) {
+    xdna_dir <- "R:/Production/Labo YEAST/Demandes du service/carte_nouveaux_clonages"   # DÉVELOPPEMENT WINDOWS
     seq_base_dir <- "P:/SEQ"
+  } else {
+    xdna_dir <- "/mnt/carte_nouveaux_clonages"                                            # FALLBACK SERVEUR
+    seq_base_dir <- "/data/production/SEQ"
   }
 
   cat("📁 Chemins configurés:\n")
