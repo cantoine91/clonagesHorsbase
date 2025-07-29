@@ -1388,19 +1388,42 @@ extract_fragment_type <- function(filename) {
   # Enlever l'extension
   base_name <- gsub("\\.(seq|ab1)$", "", basename(filename), ignore.case = TRUE)
 
-  # Prendre ce qui est avant le premier underscore
-  first_part <- strsplit(base_name, "_")[[1]][1]
+  # Séparer par underscore
+  parts <- strsplit(base_name, "_")[[1]]
 
-  # Extraire le type de fragment avec regex
-  if (grepl("5p", first_part, ignore.case = TRUE)) {
+  # Vérifier qu'on a au moins 5 parties pour accéder au 5ème élément
+  if (length(parts) < 5) {
+    return(NULL)
+  }
+
+  # Prendre le 5ème élément (entre 4ème et 5ème underscore)
+  fragment_part <- parts[5]
+
+  #cat("DEBUG extract_fragment_type - filename:", filename, "fragment_part:", fragment_part, "\n")
+
+  # Extraire le type de fragment avec regex (chercher B5p, B3p, BI1, BI2, etc.)
+  # Peut être dans des formes comme: B5p, vectorB5p, B5pvector, etc.
+  if (grepl("B5p", fragment_part, ignore.case = TRUE)) {
     return("5p")
-  } else if (grepl("3p", first_part, ignore.case = TRUE)) {
+  } else if (grepl("B3p", fragment_part, ignore.case = TRUE)) {
     return("3p")
-  } else if (grepl("int", first_part, ignore.case = TRUE)) {
-    # Extraire le numéro d'int si présent
-    int_match <- regexpr("int\\d*", first_part, ignore.case = TRUE)
+  } else if (grepl("BI\\d+", fragment_part, ignore.case = TRUE)) {
+    # Extraire le numéro d'int si présent (BI1, BI2, etc.)
+    # Peut être dans des formes comme: BI1, vectorBI2, BI3promoter, etc.
+    int_match <- regexpr("BI(\\d+)", fragment_part, ignore.case = TRUE)
     if (int_match > 0) {
-      return(tolower(regmatches(first_part, int_match)))
+      # Extraire juste le numéro après BI
+      full_match <- regmatches(fragment_part, int_match)
+      number <- gsub("BI", "", full_match, ignore.case = TRUE)
+      return(paste0("int", number))
+    }
+    return("int")
+  } else if (grepl("Bint", fragment_part, ignore.case = TRUE)) {
+    # Cas où c'est écrit "Bint" directement
+    int_match <- regexpr("Bint\\d*", fragment_part, ignore.case = TRUE)
+    if (int_match > 0) {
+      full_match <- regmatches(fragment_part, int_match)
+      return(tolower(gsub("B", "", full_match)))
     }
     return("int")
   }
@@ -1625,4 +1648,40 @@ get_enzymes_for_fragment <- function(fragment_type, enzyme1_seq, enzyme2_seq) {
   # mais on peut les chercher si nécessaire
 
   return(enzymes_to_search)
+}
+
+
+debug_paths <- function() {
+  cat("🔍 DEBUG CHEMINS CARTE_NOUVEAUX_CLONAGES\n")
+  cat("══════════════════════════════════════════\n")
+
+  # Vérifications Windows
+  windows_path <- "R:/Production/Labo YEAST/Demandes du service/carte_nouveaux_clonages"
+  cat("Windows path exists:", dir.exists(windows_path), "\n")
+
+  # Vérifications Linux
+  linux_path <- "/mnt/carte_nouveaux_clonages"
+  cat("Linux mount exists:", dir.exists(linux_path), "\n")
+
+  # Vérifications montage
+  cat("Mount point /mnt exists:", dir.exists("/mnt"), "\n")
+
+  # Lister contenu si accessible
+  if (dir.exists(linux_path)) {
+    files <- list.files(linux_path, pattern = "\\.gb$")
+    cat("Files in mount:", length(files), "\n")
+    if (length(files) > 0) {
+      cat("Examples:", paste(head(files, 3), collapse = ", "), "\n")
+    }
+  }
+
+  if (dir.exists(windows_path)) {
+    files <- list.files(windows_path, pattern = "\\.gb$")
+    cat("Files in Windows:", length(files), "\n")
+    if (length(files) > 0) {
+      cat("Examples:", paste(head(files, 3), collapse = ", "), "\n")
+    }
+  }
+
+  cat("══════════════════════════════════════════\n")
 }
