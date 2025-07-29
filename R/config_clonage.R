@@ -36,47 +36,89 @@ detect_environment <- function() {
 get_config <- function() {
   env <- detect_environment()
 
+  cat("DEBUG get_config - Environnement détecté:", env, "\n")
+  cat("DEBUG get_config - OS type:", .Platform$OS.type, "\n")
+
   if (env == "development") {
     # ========== ENVIRONNEMENT DE DÉVELOPPEMENT ==========
+    cat("DEBUG - Configuration développement\n")
+
     # Chemins pour développement local (Windows)
     config <- list(
-      xdna_dir = "R:/Production/Labo YEAST/Demandes du service/carte_nouveaux_clonages",  # NOUVEAU CHEMIN WINDOWS
-      seq_dir = "P:/SEQ",                 # Dossier racine séquences (.seq)
+      xdna_dir = "R:/Production/Labo YEAST/Demandes du service/carte_nouveaux_clonages",
+      seq_dir = "P:/SEQ",
       environment = "development"
     )
 
-    # Chemins alternatifs pour dev Linux/Mac
+    cat("DEBUG - Chemin Windows défini:", config$xdna_dir, "\n")
+    cat("DEBUG - Chemin Windows existe:", dir.exists(config$xdna_dir), "\n")
+
+    # CORRECTION : Chemins alternatifs pour dev Linux/Mac
     if (.Platform$OS.type != "windows") {
-      config$xdna_dir <- "/mnt/carte_nouveaux_clonages"  # NOUVEAU CHEMIN LINUX
-      if (dir.exists("data/genbank")) {
-        config$seq_dir <- "data/seq"
+      cat("DEBUG - OS non-Windows détecté, test chemins Linux\n")
+
+      # Tester plusieurs chemins possibles en développement Linux
+      linux_paths <- c(
+        "/mnt/carte_nouveaux_clonages",
+        "../mnt/carte_nouveaux_clonages",
+        "/data/SEQ/carte_nouveaux_clonages",
+        "data/genbank"
+      )
+
+      for (path in linux_paths) {
+        cat("DEBUG - Test chemin:", path, "- Existe:", dir.exists(path), "\n")
+        if (dir.exists(path)) {
+          config$xdna_dir <- path
+          if (path == "data/genbank") {
+            config$seq_dir <- "data/seq"
+          } else {
+            config$seq_dir <- "/data/production/SEQ"
+          }
+          cat("DEBUG - Chemin Linux sélectionné:", config$xdna_dir, "\n")
+          break
+        }
       }
     }
 
   } else {
     # ========== ENVIRONNEMENT DE PRODUCTION ==========
-    # Chemins pour production (Docker/ShinyProxy)
+    cat("DEBUG - Configuration production\n")
+
     config <- list(
-      xdna_dir = "/mnt/carte_nouveaux_clonages",      # NOUVEAU CHEMIN MONTÉ
-      seq_dir = "/data/production/SEQ",               # Dossiers avec fichiers .seq
+      xdna_dir = "/mnt/carte_nouveaux_clonages",
+      seq_dir = "/data/production/SEQ",
       environment = "production"
     )
 
+    cat("DEBUG - Chemin production défini:", config$xdna_dir, "\n")
+    cat("DEBUG - Chemin production existe:", dir.exists(config$xdna_dir), "\n")
+
     # Vérification des chemins de production et fallbacks
     if (!dir.exists(config$xdna_dir)) {
-      # Essayer des chemins alternatifs
-      if (dir.exists("/data/SEQ/carte_nouveaux_clonages")) {
-        config$xdna_dir <- "/data/SEQ/carte_nouveaux_clonages"
-        config$seq_dir <- "/data/SEQ"
-      } else if (dir.exists("../data/production/SEQ/carte_nouveaux_clonages")) {
-        config$xdna_dir <- "../data/production/SEQ/carte_nouveaux_clonages"
-        config$seq_dir <- "../data/production/SEQ"
-      } else if (dir.exists("../data/SEQ/carte_nouveaux_clonages")) {
-        config$xdna_dir <- "../data/SEQ/carte_nouveaux_clonages"
-        config$seq_dir <- "../data/SEQ"
+      cat("DEBUG - Chemin principal non trouvé, test alternatives\n")
+
+      alt_paths <- list(
+        list(xdna = "/data/SEQ/carte_nouveaux_clonages", seq = "/data/SEQ"),
+        list(xdna = "../data/production/SEQ/carte_nouveaux_clonages", seq = "../data/production/SEQ"),
+        list(xdna = "../data/SEQ/carte_nouveaux_clonages", seq = "../data/SEQ")
+      )
+
+      for (alt in alt_paths) {
+        cat("DEBUG - Test alternatif:", alt$xdna, "- Existe:", dir.exists(alt$xdna), "\n")
+        if (dir.exists(alt$xdna)) {
+          config$xdna_dir <- alt$xdna
+          config$seq_dir <- alt$seq
+          cat("DEBUG - Alternatif sélectionné:", config$xdna_dir, "\n")
+          break
+        }
       }
     }
   }
+
+  cat("DEBUG - Configuration finale:\n")
+  cat("  - xdna_dir:", config$xdna_dir, "\n")
+  cat("  - seq_dir:", config$seq_dir, "\n")
+  cat("  - environment:", config$environment, "\n")
 
   return(config)
 }
