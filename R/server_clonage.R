@@ -272,7 +272,6 @@ server_clonage <- function(input, output, session) {
   restriction_sites <- reactive({
     req(data_xdna$seq)
 
-    # Récupérer les informations sur les fragments si disponibles
     selected_files <- get_all_selected_files()
     if (length(selected_files) == 0) {
       return(list())
@@ -301,7 +300,7 @@ server_clonage <- function(input, output, session) {
       }
     }
 
-    # Chercher les enzymes dans la séquence de référence
+    # Chercher enzyme1 (toujours sens direct)
     if (!is.null(enzyme1_seq)) {
       enzyme1_name <- if (input$enzyme1 == "CUSTOM") {
         if (!is.null(input$enzyme1_custom_name) && input$enzyme1_custom_name != "") {
@@ -320,6 +319,7 @@ server_clonage <- function(input, output, session) {
       }
     }
 
+    # Chercher enzyme2 (avec reverse complément automatique pour les oligos personnalisés)
     if (!is.null(enzyme2_seq)) {
       enzyme2_name <- if (input$enzyme2 == "CUSTOM") {
         if (!is.null(input$enzyme2_custom_name) && input$enzyme2_custom_name != "") {
@@ -331,16 +331,25 @@ server_clonage <- function(input, output, session) {
         input$enzyme2
       }
 
-      sites2 <- find_restriction_sites(data_xdna$seq, enzyme2_seq)
+      # Pour les oligos personnalisés (CUSTOM), appliquer automatiquement le reverse complément
+      if (input$enzyme2 == "CUSTOM") {
+        # L'utilisateur saisit l'oligo, on le met automatiquement en reverse complément
+        enzyme2_seq_search <- reverse_complement(enzyme2_seq)
+        enzyme2_name <- paste0(enzyme2_name, "_RC")  # Indiquer dans le nom que c'est le RC
+      } else {
+        # Pour les enzymes de restriction classiques, garder le sens direct
+        enzyme2_seq_search <- enzyme2_seq
+      }
+
+      sites2 <- find_restriction_sites(data_xdna$seq, enzyme2_seq_search)
       if (length(sites2) > 0) {
         sites_list[[enzyme2_name]] <- sites2
-        attr(sites_list[[enzyme2_name]], "enzyme_sequence") <- enzyme2_seq
+        attr(sites_list[[enzyme2_name]], "enzyme_sequence") <- enzyme2_seq_search
       }
     }
 
     return(sites_list)
   })
-
 
   output$restriction_info <- renderText({
     sites <- restriction_sites()
@@ -1116,47 +1125,13 @@ server_clonage <- function(input, output, session) {
         selected_files = get_all_selected_files()
       )
 
-      # Calcul de la région d'affichage si demandé
-      display_region <- if (input$show_restriction_context) {
-        calculate_restriction_display_region(restriction_sites(), length(data_xdna$seq))
-      } else {
-        list(start = 1, end = length(data_xdna$seq))
-      }
-
       # Génération de la légende des couleurs
       legend_content <- generate_color_legend(data_xdna$features, restriction_sites())
-
-      # Ajout d'information sur la région affichée
-      if (input$show_restriction_context && length(restriction_sites()) > 0) {
-        region_info <- paste0(
-          "<div style='background: #e3f2fd; padding: 8px; border-radius: 4px; margin-bottom: 10px; font-size: 12px;'>",
-          "📍 <strong>Région affichée:</strong> ", display_region$start, " - ", display_region$end,
-          " (", display_region$end - display_region$start + 1, " nt)",
-          "<br>💡 Centrée sur les sites de restriction avec ±200nt de contexte",
-          "</div>"
-        )
-        legend_content <- paste0(region_info, legend_content)
-      } else if (input$show_restriction_context && length(restriction_sites()) == 0) {
-        region_info <- paste0(
-          "<div style='background: #fff3cd; padding: 8px; border-radius: 4px; margin-bottom: 10px; font-size: 12px;'>",
-          "ℹ️ <strong>Aucun site de restriction trouvé.</strong> Affichage de la séquence complète.",
-          "</div>"
-        )
-        legend_content <- paste0(region_info, legend_content)
-      } else {
-        region_info <- paste0(
-          "<div style='background: #f8f9fa; padding: 8px; border-radius: 4px; margin-bottom: 10px; font-size: 12px;'>",
-          "📍 <strong>Mode:</strong> Affichage de la séquence complète de référence",
-          "</div>"
-        )
-        legend_content <- paste0(region_info, legend_content)
-      }
 
       align_output <- character()
       text_output <- character()
 
       selected_files_paths <- get_all_selected_files()
-
       total_seqs <- length(seqs())
 
       # Traitement de chaque séquence pour alignement
@@ -1180,17 +1155,20 @@ server_clonage <- function(input, output, session) {
         sub_aligned <- as.character(subject(aln))
         annot_aligned <- annotate_sequence_mutations(pat_aligned, sub_aligned)
 
-        # MODIFICATION : Utilisation de la région d'affichage
-        if (input$show_restriction_context && length(restriction_sites()) > 0) {
+        # ✅ LOGIQUE SIMPLE ET CLAIRE DU BOUTON
+        if (input$show_restriction_context) {
+          # 🔍 CASE COCHÉE = MODE CONTEXTE RESTREINT : ±200nt autour de l'alignement
+          display_region <- calculate_alignment_display_region(aln_start, aln_end, length(data_xdna$seq), 200)
+          region_info_text <- paste0(" (contexte ±200nt: ", display_region$start, "-", display_region$end, ")")
+
           # Extraction de la sous-séquence dans la région d'intérêt
           region_seq <- data_xdna$seq[display_region$start:display_region$end]
           region_length <- length(region_seq)
 
-          # Ajustement des positions d'alignement relatives à la région d'affichage
+          # Utiliser les fonctions existantes
           relative_start <- max(1, aln_start - display_region$start + 1)
           relative_end <- min(region_length, aln_end - display_region$start + 1)
 
-          # Création des séquences avec gaps pour la région
           full_pattern <- create_full_pattern_with_gaps(pat_aligned, relative_start, region_length)
           full_subject <- as.character(region_seq)
           full_annot <- create_full_annotation_with_spaces(annot_aligned, relative_start, region_length)
@@ -1199,24 +1177,25 @@ server_clonage <- function(input, output, session) {
           colors <- build_sequence_color_map(data_xdna$features, display_region$start, region_length)
           restriction_positions <- build_restriction_position_map(region_length, restriction_sites(), display_region$start)
 
-          region_info_text <- paste0(" (région ", display_region$start, "-", display_region$end,
-                                     ", alignement: ", aln_start, "-", aln_end, ")")
-
-          # AJOUT CRUCIAL : Passer l'offset de début pour les positions absolues
           display_start_offset <- display_region$start
+
         } else {
-          # Mode normal : séquence complète
-          full_pattern <- create_full_pattern_with_gaps(pat_aligned, aln_start, length(data_xdna$seq))
+          # 📋 CASE DÉCOCHÉE = MODE SÉQUENCE COMPLÈTE AVEC COULEURS
+          region_info_text <- paste0(" (séquence complète: 1-", length(data_xdna$seq), ", alignement: ", aln_start, "-", aln_end, ")")
+
+          # Utiliser TOUTE la séquence de référence
           full_subject <- as.character(data_xdna$seq)
-          full_annot <- create_full_annotation_with_spaces(annot_aligned, aln_start, length(data_xdna$seq))
+          sequence_length <- length(data_xdna$seq)
 
-          colors <- build_sequence_color_map(data_xdna$features, 1, length(data_xdna$seq))
-          restriction_positions <- build_restriction_position_map(length(data_xdna$seq), restriction_sites())
+          # Créer le pattern avec gaps dans le contexte de la séquence complète
+          full_pattern <- create_full_pattern_with_gaps(pat_aligned, aln_start, sequence_length)
+          full_annot <- create_full_annotation_with_spaces(annot_aligned, aln_start, sequence_length)
 
-          region_info_text <- paste0(" (région alignée: ", aln_start, "-", aln_end, ")")
-
-          # Pas d'offset en mode normal
           display_start_offset <- 1
+
+          # ✅ AVEC couleurs et restrictions pour toute la séquence
+          colors <- build_sequence_color_map(data_xdna$features, 1, sequence_length)
+          restriction_positions <- build_restriction_position_map(sequence_length, restriction_sites(), 1)
         }
 
         # Déterminer le type de fragment pour ce fichier
@@ -1241,12 +1220,12 @@ server_clonage <- function(input, output, session) {
         # Génération de l'alignement coloré AVEC le type de fragment
         blast_alignment <- generate_colored_alignment(
           full_pattern, full_subject, full_annot,
-          aln_start,  # IMPORTANT : Toujours utiliser la position absolue d'origine
+          aln_start,
           colors,
           paste0(file_display_name, region_info_text),
           restriction_positions,
-          display_start_offset,  # NOUVEAU PARAMÈTRE pour calculer les positions absolues
-          file_fragment_type     # NOUVEAU PARAMÈTRE pour le type de fragment
+          display_start_offset,
+          file_fragment_type
         )
 
         align_output <- c(align_output, blast_alignment$html)

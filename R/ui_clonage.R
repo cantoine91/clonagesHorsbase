@@ -474,21 +474,23 @@ ui_clonage <- navbarPage(
                      h5("⚙️ Options d'affichage", style = "color: #b22222; margin-top: 0; margin-bottom: 10px;"),
 
                      checkboxInput("show_restriction_context",
-                                   label = "Centrer l'alignement sur les sites de restriction/séquences (±200nt)",
+                                   label = "Affichage restreint : ±200nt autour de l'alignement uniquement",
                                    value = TRUE),
 
                      conditionalPanel(
                        condition = "input.show_restriction_context == true",
-                       div(style = "margin-top: 5px; padding: 5px; background: #e8f5e8; border-left: 3px solid #4caf50; font-size: 12px;",
-                           "💡 L'alignement sera centré sur la région entre les sites trouvés avec ±200nt de contexte.",
+                       div(style = "margin-top: 5px; padding: 5px; background: #fff3cd; border-left: 3px solid #ffc107; font-size: 12px;",
+                           "🔍 ", tags$strong("Mode restreint :"), " Seuls ±200nt autour de chaque alignement seront affichés.",
                            br(),
-                           "Si aucun site n'est trouvé, la séquence complète sera affichée.")
+                           "Idéal pour se concentrer sur la zone d'intérêt sans voir toute la séquence.")
                      ),
 
                      conditionalPanel(
                        condition = "input.show_restriction_context == false",
-                       div(style = "margin-top: 5px; padding: 5px; background: #fff3cd; border-left: 3px solid #ffc107; font-size: 12px;",
-                           "ℹ️ L'alignement affichera la séquence complète de référence.")
+                       div(style = "margin-top: 5px; padding: 5px; background: #e8f5e8; border-left: 3px solid #4caf50; font-size: 12px;",
+                           "📋 ", tags$strong("Mode complet :"), " La séquence complète de référence sera affichée.",
+                           br(),
+                           "Permet de voir l'alignement dans le contexte global de la carte.")
                      )
                  )
                ),

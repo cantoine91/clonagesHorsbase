@@ -45,11 +45,21 @@ clean_sequence <- function(sequence_text) {
   toupper(sequence_text)
 }
 
-#' Calcul de la région d'affichage basée sur les sites de restriction
-#' @param restriction_sites_list Liste des sites de restriction
+#' Calcul de la région d'affichage basée sur l'alignement réel
+#' @param alignment_start Position de début de l'alignement
+#' @param alignment_end Position de fin de l'alignement
 #' @param sequence_length Longueur totale de la séquence
 #' @param context_length Nombre de nucléotides de contexte (défaut: 200)
 #' @return Liste avec start et end de la région à afficher
+calculate_alignment_display_region <- function(alignment_start, alignment_end, sequence_length, context_length = 200) {
+
+  # Région basée sur l'alignement réel avec contexte
+  start_pos <- max(1, alignment_start - context_length)
+  end_pos <- min(sequence_length, alignment_end + context_length)
+
+  return(list(start = start_pos, end = end_pos))
+}
+
 calculate_restriction_display_region <- function(restriction_sites_list, sequence_length, context_length = 200) {
   if (length(restriction_sites_list) == 0) {
     return(list(start = 1, end = sequence_length))
@@ -739,7 +749,10 @@ generate_colored_alignment <- function(pattern_seq, subject_seq, annotation_seq,
                                        colors, filename, restriction_positions = NULL,
                                        display_start_offset = 1, fragment_type = NULL) {
   line_length <- CONFIG_DEFAULTS$line_length
-  sequence_length <- nchar(subject_seq)
+
+  # ✅ CORRECTION : Utiliser directement les séquences alignées telles qu'elles sont
+  # Ne PAS essayer de les "étendre" à la séquence complète
+  sequence_length <- nchar(subject_seq)  # Longueur de l'alignement, pas de la séquence complète
 
   html_lines <- character()
   text_lines <- character()
@@ -753,23 +766,30 @@ generate_colored_alignment <- function(pattern_seq, subject_seq, annotation_seq,
   for (start in seq(1, sequence_length, by = line_length)) {
     end <- min(start + line_length - 1, sequence_length)
 
-    # Extraction des segments
+    # Extraction des segments DIRECTEMENT des séquences alignées
     subject_segment <- substr(subject_seq, start, end)
     pattern_segment <- substr(pattern_seq, start, end)
     annotation_segment <- substr(annotation_seq, start, end)
 
-    # Calcul des positions d'affichage pour le sujet (séquence de référence)
-    subject_start_absolute <- (display_start_offset - 1) + start
-    subject_end_absolute <- (display_start_offset - 1) + end
+    # ✅ CORRECTION : Calcul correct des positions pour l'affichage
+    # Pour le subject (référence) : compter seulement les nucleotides non-gap
+    subject_before_segment <- substr(subject_seq, 1, start - 1)
+    subject_bases_before <- nchar(gsub("-", "", subject_before_segment))
+    subject_bases_in_segment <- nchar(gsub("-", "", subject_segment))
 
-    # Compter les nucléotides réels (non-gap) avant ce segment
+    if (subject_bases_in_segment == 0) {
+      subject_start <- subject_bases_before
+      subject_end <- subject_bases_before
+    } else {
+      subject_start <- display_start_offset + subject_bases_before
+      subject_end <- display_start_offset + subject_bases_before + subject_bases_in_segment - 1
+    }
+
+    # Pour le pattern : compter seulement les nucleotides non-gap
     pattern_before_segment <- substr(pattern_seq, 1, start - 1)
     pattern_bases_before <- nchar(gsub("-", "", pattern_before_segment))
-
-    # Compter les nucléotides réels dans ce segment
     pattern_bases_in_segment <- nchar(gsub("-", "", pattern_segment))
 
-    # Calculer les positions de début et fin du pattern
     if (pattern_bases_in_segment == 0) {
       pattern_start <- pattern_bases_before
       pattern_end <- pattern_bases_before
@@ -778,34 +798,26 @@ generate_colored_alignment <- function(pattern_seq, subject_seq, annotation_seq,
       pattern_end <- pattern_bases_before + pattern_bases_in_segment
     }
 
-    # Extraction des couleurs et restrictions pour ce segment
-    segment_colors <- if (!is.null(colors) && length(colors) >= end) {
-      colors[start:end]
-    } else {
-      NULL
-    }
+    # ✅ CORRECTION : Ne pas utiliser de couleurs/restrictions sur l'alignement
+    # Ces informations ne sont valides que pour la séquence complète
+    segment_colors <- NULL
+    segment_restrictions <- NULL
 
-    segment_restrictions <- if (!is.null(restriction_positions) && length(restriction_positions) >= end) {
-      restriction_positions[start:end]
-    } else {
-      NULL
-    }
-
-    # MODIFICATION : Passer le fragment_type à la fonction de création du tableau
+    # Création du tableau d'alignement
     alignment_table <- create_colored_alignment_table(
       subject_segment, pattern_segment, annotation_segment,
-      subject_start_absolute, subject_end_absolute, pattern_start, pattern_end,
+      subject_start, subject_end, pattern_start, pattern_end,
       segment_colors, segment_restrictions, display_start_offset, start, fragment_type
     )
 
     html_lines <- c(html_lines, alignment_table)
 
-    # MODIFICATION : Version texte avec les nouveaux labels
+    # Version texte
     subject_label <- "Carte"
     pattern_label <- if (!is.null(fragment_type)) fragment_type else "Seq"
 
     text_lines <- c(text_lines, "")
-    text_lines <- c(text_lines, sprintf("%s %6d %s %d", subject_label, subject_start_absolute, subject_segment, subject_end_absolute))
+    text_lines <- c(text_lines, sprintf("%s %6d %s %d", subject_label, subject_start, subject_segment, subject_end))
     text_lines <- c(text_lines, sprintf("       %s", annotation_segment))
     text_lines <- c(text_lines, sprintf("%s %6d %s %d", pattern_label, pattern_start, pattern_segment, pattern_end))
   }
@@ -817,6 +829,7 @@ generate_colored_alignment <- function(pattern_seq, subject_seq, annotation_seq,
     text = paste(text_lines, collapse = "\n")
   ))
 }
+
 
 #' Création d'un tableau HTML coloré pour un segment d'alignement
 #' @param subject_segment Segment de la séquence sujet
@@ -849,9 +862,17 @@ create_colored_alignment_table <- function(subject_segment, pattern_segment, ann
   # Création des cellules
   subject_cells <- create_colored_sequence_cells(subject_chars, segment_colors, base_cell_style,
                                                  restriction_positions, display_start_offset,
-                                                 segment_start_in_display, "subject")
+                                                 segment_start_in_display, "subject",
+                                                 annotation_chars, pattern_chars)
+
+  pattern_cells <- create_colored_sequence_cells(pattern_chars, NULL, base_cell_style,
+                                                 NULL, display_start_offset,
+                                                 segment_start_in_display, "pattern",
+                                                 annotation_chars, subject_chars)
+
+  # IMPORTANT : L'annotation utilise create_sequence_cells avec type "annotation"
   annotation_cells <- create_sequence_cells(annotation_chars, base_cell_style, 1, "annotation")
-  pattern_cells <- create_sequence_cells(pattern_chars, base_cell_style, pattern_start, "pattern")
+
 
   # Déterminer les labels
   subject_label <- "Carte"
@@ -889,31 +910,34 @@ create_colored_alignment_table <- function(subject_segment, pattern_segment, ann
 #' @param colors Couleurs à appliquer
 #' @param base_style Style CSS de base
 #' @param restriction_positions Positions des sites de restriction
-#' @param start_position Position de début dans la séquence
+#' @param display_start_offset Offset pour les positions absolues
+#' @param segment_start_in_display Position de début du segment
 #' @param sequence_type Type de séquence ("subject" ou "pattern")
+#' @param annotation_chars Caractères d'annotation pour détecter les mutations (NOUVEAU)
 #' @return Vecteur de cellules HTML formatées
 create_colored_sequence_cells <- function(sequence_chars, colors, base_style, restriction_positions = NULL,
                                           display_start_offset = 1, segment_start_in_display = 1,
-                                          sequence_type = "subject") {
+                                          sequence_type = "subject", annotation_chars = NULL,
+                                          other_sequence_chars = NULL) {
   cells <- character()
 
   for (i in seq_along(sequence_chars)) {
     style <- paste0(base_style, " position: relative; cursor: pointer;")
 
-    # CORRECTION CRUCIALE : Calcul de la position absolue dans la séquence de référence
+    # Calcul de la position absolue
     real_position_absolute <- (display_start_offset - 1) + segment_start_in_display + i - 1
 
-    # Application des couleurs normales
-    if (!is.null(colors) && i <= length(colors) && !is.na(colors[i])) {
+    # Application des couleurs GenBank SEULEMENT pour la carte (subject)
+    if (sequence_type == "subject" && !is.null(colors) && i <= length(colors) && !is.na(colors[i])) {
       style <- paste0(style, " color: ", colors[i], "; font-weight: bold;")
     }
 
-    # Ajout du fond gris pour les sites de restriction
+    # Sites de restriction (fond gris)
     if (!is.null(restriction_positions) && i <= length(restriction_positions) && restriction_positions[i]) {
       style <- paste0(style, " background-color: #D3D3D3; border: 1px solid #999; border-radius: 2px;")
     }
 
-    # Création du tooltip avec la position absolue correcte
+    # Tooltip simple
     tooltip_text <- paste0("Position: ", real_position_absolute, " | Nucléotide: ", sequence_chars[i])
     if (sequence_type == "pattern") {
       tooltip_text <- paste0(tooltip_text, " (Séquence test)")
@@ -929,31 +953,26 @@ create_colored_sequence_cells <- function(sequence_chars, colors, base_style, re
   return(cells)
 }
 
+
+
+
 #' créer les cellules d'annotation
+# ==============================================================================
+# CORRECTION SIMPLE dans global_clonage.R
+# Modifier SEULEMENT la fonction create_sequence_cells
+# ==============================================================================
+
 create_sequence_cells <- function(sequence_chars, base_style, start_position = 1, sequence_type = "pattern") {
   cells <- character()
 
-  # Si c'est une annotation, appliquer le surlignage des mutations
+  # CORRECTION : Si c'est une annotation, surligner SEULEMENT quand pas de '|'
   if (sequence_type == "annotation") {
-    # Trouver la première et dernière position avec '|'
-    match_positions <- which(sequence_chars == "|")
-
-    if (length(match_positions) > 0) {
-      first_match <- match_positions[1]
-      last_match <- match_positions[length(match_positions)]
-    } else {
-      first_match <- 0
-      last_match <- 0
-    }
 
     for (i in seq_along(sequence_chars)) {
       style <- paste0(base_style, " position: relative; cursor: pointer;")
 
-      # Ajouter le fond rouge pour les mutations dans la zone d'alignement
-      if (first_match > 0 &&
-          i >= first_match &&
-          i <= last_match &&
-          sequence_chars[i] != "|") {
+      # RÈGLE SIMPLE : Fond rouge si le caractère n'est PAS '|'
+      if (sequence_chars[i] != "|") {
         style <- paste0(style, " background-color: #ffcccc; border: 1px solid #ff9999; border-radius: 2px;")
       }
 
@@ -963,7 +982,7 @@ create_sequence_cells <- function(sequence_chars, base_style, start_position = 1
     return(cells)
   }
 
-  # Pour les séquences pattern normales
+  # Pour les séquences pattern normales (sans modification)
   for (i in seq_along(sequence_chars)) {
     style <- paste0(base_style, " position: relative; cursor: pointer;")
 
