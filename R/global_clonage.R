@@ -254,21 +254,54 @@ generate_restriction_legend_formatted <- function(restriction_sites_list) {
     if (length(sites) > 0) {
       color <- colors[((site_index - 1) %% length(colors)) + 1]
       enzymes <- get_restriction_enzymes()
-      enzyme_seq <- enzymes[[enzyme_name]]
 
-      # Affichage spécial pour SfiI
-      if (enzyme_name == "SfiI") {
-        enzyme_display <- "GGCCNNNNNGGCC"
-      } else {
-        enzyme_display <- enzyme_seq
+      # Récupérer la séquence de l'enzyme
+      enzyme_seq <- attr(sites, "enzyme_sequence")
+      if (is.null(enzyme_seq)) {
+        enzyme_seq <- enzymes[[enzyme_name]]
       }
 
-      sites_text <- paste(sites, collapse = ", ")
+      # ✅ CORRECTION : Pour les séquences personnalisées, utiliser le nom au lieu de la séquence
+      if (grepl("Custom[12]_", enzyme_name)) {
+        # C'est une séquence personnalisée sans nom custom
+        enzyme_display <- enzyme_seq
+        site_length <- nchar(enzyme_seq)
+      } else if (enzyme_name == "SfiI" || (!is.null(enzyme_seq) && enzyme_seq == "GGCC.....GGCC")) {
+        # Cas spécial SfiI
+        enzyme_display <- "GGCCNNNNNGGCC"
+        site_length <- 13
+      } else if (!is.null(enzyme_seq) && enzyme_name %in% names(enzymes)) {
+        # Enzyme classique
+        enzyme_display <- enzyme_seq
+        site_length <- nchar(enzyme_seq)
+      } else {
+        # ✅ Séquence personnalisée avec nom custom - afficher seulement le nom
+        enzyme_display <- ""  # Pas de séquence entre parenthèses
+        site_length <- if (!is.null(enzyme_seq)) nchar(enzyme_seq) else 6
+      }
+
+      # Calculer début-fin pour chaque site
+      sites_ranges <- character()
+      for (site_pos in sites) {
+        site_end <- site_pos + site_length - 1
+        sites_ranges <- c(sites_ranges, paste0(site_pos, "-", site_end))
+      }
+
+      sites_text <- paste(sites_ranges, collapse = ", ")
+
+      # ✅ Affichage selon le type
+      if (enzyme_display == "") {
+        # Nom personnalisé sans parenthèses
+        display_text <- paste0(enzyme_name, " - Sites: ", sites_text)
+      } else {
+        # Enzyme classique ou séquence avec parenthèses
+        display_text <- paste0(enzyme_name, " (", enzyme_display, ") - Sites: ", sites_text)
+      }
+
       legend_items <- c(legend_items,
                         paste0("<div style='margin-bottom: 5px;'><span style='color:", color,
-                               "; font-weight: bold; font-size: 16px;'>■</span> ",
-                               "<span style='font-size: 12px;'>", enzyme_name, " (", enzyme_display,
-                               ") - Sites: ", sites_text, "</span></div>"))
+                               "; font-weight: bold; font-size: 16px;'>■ </span> ",
+                               "<span style='font-size: 12px;'>", display_text, "</span></div>"))
       site_index <- site_index + 1
     }
   }
@@ -798,10 +831,18 @@ generate_colored_alignment <- function(pattern_seq, subject_seq, annotation_seq,
       pattern_end <- pattern_bases_before + pattern_bases_in_segment
     }
 
-    # ✅ CORRECTION : Ne pas utiliser de couleurs/restrictions sur l'alignement
-    # Ces informations ne sont valides que pour la séquence complète
-    segment_colors <- NULL
-    segment_restrictions <- NULL
+    # ✅ UTILISER TOUJOURS les couleurs et restrictions
+    segment_colors <- if (!is.null(colors) && start <= length(colors)) {
+      colors[start:min(end, length(colors))]
+    } else {
+      NULL
+    }
+
+    segment_restrictions <- if (!is.null(restriction_positions) && start <= length(restriction_positions)) {
+      restriction_positions[start:min(end, length(restriction_positions))]
+    } else {
+      NULL
+    }
 
     # Création du tableau d'alignement
     alignment_table <- create_colored_alignment_table(

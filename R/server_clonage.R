@@ -888,10 +888,7 @@ server_clonage <- function(input, output, session) {
     }
 
     return(div(
-      # Message d'aide simple
-      div(style = "background: #e8f5e8; padding: 8px; border-radius: 4px; margin-bottom: 10px; font-size: 12px;",
-          "💡 ", tags$strong("Sur le serveur :"), " Cliquez pour ouvrir la fenêtre de téléchargement. ",
-          "Choisissez 'Ouvrir avec' pour ouvrir directement le fichier."),
+
       button_list
     ))
   })
@@ -1128,18 +1125,26 @@ server_clonage <- function(input, output, session) {
       # Génération de la légende des couleurs
       legend_content <- generate_color_legend(data_xdna$features, restriction_sites())
 
-      align_output <- character()
-      text_output <- character()
-
       selected_files_paths <- get_all_selected_files()
       total_seqs <- length(seqs())
 
-      # Traitement de chaque séquence pour alignement
+      # ======================================================================
+      # GÉNÉRATION DES 3 TYPES D'ALIGNEMENTS
+      # ======================================================================
+
+      align_local_context <- character()  # Local ±200nt
+      align_local_complete <- character() # Local + référence complète
+      align_global <- character()         # Global (Needle)
+      text_output <- character()
+
+      # Traitement de chaque séquence pour les 3 types d'alignements
       for (i in seq_along(seqs())) {
         incProgress(0.7/total_seqs, detail = paste("Alignement", i, "sur", total_seqs))
 
-        # Alignement par paires avec la séquence de référence
-        aln <- Biostrings::pairwiseAlignment(
+        # =====================================================================
+        # 1. ALIGNEMENT LOCAL (Smith-Waterman) - pour onglets 1 et 2
+        # =====================================================================
+        aln_local <- Biostrings::pairwiseAlignment(
           pattern = seqs()[[i]],
           subject = data_xdna$seq,
           type = "local",
@@ -1148,112 +1153,203 @@ server_clonage <- function(input, output, session) {
           gapExtension = -1
         )
 
-        # Extraction des informations d'alignement
-        aln_start <- start(subject(aln))
-        aln_end <- end(subject(aln))
-        pat_aligned <- as.character(pattern(aln))
-        sub_aligned <- as.character(subject(aln))
-        annot_aligned <- annotate_sequence_mutations(pat_aligned, sub_aligned)
+        # Extraction des informations d'alignement local
+        aln_start <- start(subject(aln_local))
+        aln_end <- end(subject(aln_local))
+        pat_aligned_local <- as.character(pattern(aln_local))
+        sub_aligned_local <- as.character(subject(aln_local))
+        annot_aligned_local <- annotate_sequence_mutations(pat_aligned_local, sub_aligned_local)
 
-        # ✅ LOGIQUE SIMPLE ET CLAIRE DU BOUTON
-        if (input$show_restriction_context) {
-          # 🔍 CASE COCHÉE = MODE CONTEXTE RESTREINT : ±200nt autour de l'alignement
-          display_region <- calculate_alignment_display_region(aln_start, aln_end, length(data_xdna$seq), 200)
-          region_info_text <- paste0(" (contexte ±200nt: ", display_region$start, "-", display_region$end, ")")
+        # =====================================================================
+        # 2. ALIGNEMENT GLOBAL (Needleman-Wunsch) - pour onglet 3
+        # =====================================================================
+        aln_global <- Biostrings::pairwiseAlignment(
+          pattern = seqs()[[i]],
+          subject = data_xdna$seq,
+          type = "global",
+          substitutionMatrix = nucleotideSubstitutionMatrix(match = 2, mismatch = -1),
+          gapOpening = -2,
+          gapExtension = -1
+        )
 
-          # Extraction de la sous-séquence dans la région d'intérêt
-          region_seq <- data_xdna$seq[display_region$start:display_region$end]
-          region_length <- length(region_seq)
+        pat_aligned_global <- as.character(pattern(aln_global))
+        sub_aligned_global <- as.character(subject(aln_global))
+        annot_aligned_global <- annotate_sequence_mutations(pat_aligned_global, sub_aligned_global)
 
-          # Utiliser les fonctions existantes
-          relative_start <- max(1, aln_start - display_region$start + 1)
-          relative_end <- min(region_length, aln_end - display_region$start + 1)
-
-          full_pattern <- create_full_pattern_with_gaps(pat_aligned, relative_start, region_length)
-          full_subject <- as.character(region_seq)
-          full_annot <- create_full_annotation_with_spaces(annot_aligned, relative_start, region_length)
-
-          # Cartes de couleurs et restrictions pour la région
-          colors <- build_sequence_color_map(data_xdna$features, display_region$start, region_length)
-          restriction_positions <- build_restriction_position_map(region_length, restriction_sites(), display_region$start)
-
-          display_start_offset <- display_region$start
-
-        } else {
-          # 📋 CASE DÉCOCHÉE = MODE SÉQUENCE COMPLÈTE AVEC COULEURS
-          region_info_text <- paste0(" (séquence complète: 1-", length(data_xdna$seq), ", alignement: ", aln_start, "-", aln_end, ")")
-
-          # Utiliser TOUTE la séquence de référence
-          full_subject <- as.character(data_xdna$seq)
-          sequence_length <- length(data_xdna$seq)
-
-          # Créer le pattern avec gaps dans le contexte de la séquence complète
-          full_pattern <- create_full_pattern_with_gaps(pat_aligned, aln_start, sequence_length)
-          full_annot <- create_full_annotation_with_spaces(annot_aligned, aln_start, sequence_length)
-
-          display_start_offset <- 1
-
-          # ✅ AVEC couleurs et restrictions pour toute la séquence
-          colors <- build_sequence_color_map(data_xdna$features, 1, sequence_length)
-          restriction_positions <- build_restriction_position_map(sequence_length, restriction_sites(), 1)
-        }
-
-        # Déterminer le type de fragment pour ce fichier
+        # Déterminer le type de fragment
         file_fragment_type <- if (!is.null(selected_files_paths) && i <= length(selected_files_paths)) {
           extract_fragment_type(selected_files_paths[i])
         } else {
-          NULL
+          "Seq"
         }
 
-        # Si pas de type détecté, utiliser un fallback
-        if (is.null(file_fragment_type)) {
-          file_fragment_type <- "Seq"
-        }
-
-        # Nom d'affichage du fichier
         file_display_name <- if (!is.null(selected_files_paths) && i <= length(selected_files_paths)) {
           basename(selected_files_paths[i])
         } else {
           paste0("Fichier_", i)
         }
 
-        # Génération de l'alignement coloré AVEC le type de fragment
-        blast_alignment <- generate_colored_alignment(
-          full_pattern, full_subject, full_annot,
-          aln_start,
-          colors,
-          paste0(file_display_name, region_info_text),
-          restriction_positions,
-          display_start_offset,
-          file_fragment_type
+        # =====================================================================
+        # ONGLET 1 : LOCAL ±200NT - ALIGNEMENT + CONTEXTE AVANT/APRÈS
+        # =====================================================================
+        display_region <- calculate_alignment_display_region(aln_start, aln_end, length(data_xdna$seq), 200)
+
+        # Extraire le contexte avant et après l'alignement
+        context_before <- if (display_region$start < aln_start) {
+          as.character(data_xdna$seq[display_region$start:(aln_start-1)])
+        } else {
+          ""
+        }
+
+        context_after <- if (aln_end < display_region$end) {
+          as.character(data_xdna$seq[(aln_end+1):display_region$end])
+        } else {
+          ""
+        }
+
+        # Construire les séquences avec contexte + alignement + contexte
+        full_subject_context <- paste0(context_before, sub_aligned_local, context_after)
+        full_pattern_context <- paste0(strrep("-", nchar(context_before)), pat_aligned_local, strrep("-", nchar(context_after)))
+        full_annot_context <- paste0(strrep(" ", nchar(context_before)), annot_aligned_local, strrep(" ", nchar(context_after)))
+
+        # Calculer les couleurs pour toute la région
+        region_length <- nchar(full_subject_context)
+        colors_context <- build_sequence_color_map(data_xdna$features, display_region$start, region_length)
+        restriction_positions_context <- build_restriction_position_map(region_length, restriction_sites(), display_region$start)
+
+        alignment_context <- generate_colored_alignment(
+          full_pattern_context, full_subject_context, full_annot_context,
+          display_region$start, colors_context,
+          paste0(file_display_name, " (contexte ±200nt: ", display_region$start, "-", display_region$end, ")"),
+          restriction_positions_context, display_region$start, file_fragment_type
         )
 
-        align_output <- c(align_output, blast_alignment$html)
-        text_output <- c(text_output, blast_alignment$text)
+        # =====================================================================
+        # ONGLET 2 : LOCAL + RÉFÉRENCE COMPLÈTE - ALIGNEMENT + SÉQUENCE ENTIÈRE
+        # =====================================================================
+        sequence_length <- length(data_xdna$seq)
+
+        # Contexte avant et après pour la séquence complète
+        context_before_full <- if (aln_start > 1) {
+          as.character(data_xdna$seq[1:(aln_start-1)])
+        } else {
+          ""
+        }
+
+        context_after_full <- if (aln_end < sequence_length) {
+          as.character(data_xdna$seq[(aln_end+1):sequence_length])
+        } else {
+          ""
+        }
+
+        # Construire les séquences complètes
+        full_subject_complete <- paste0(context_before_full, sub_aligned_local, context_after_full)
+        full_pattern_complete <- paste0(strrep("-", nchar(context_before_full)), pat_aligned_local, strrep("-", nchar(context_after_full)))
+        full_annot_complete <- paste0(strrep(" ", nchar(context_before_full)), annot_aligned_local, strrep(" ", nchar(context_after_full)))
+
+        colors_complete <- build_sequence_color_map(data_xdna$features, 1, sequence_length)
+        restriction_positions_complete <- build_restriction_position_map(sequence_length, restriction_sites(), 1)
+
+        alignment_complete <- generate_colored_alignment(
+          full_pattern_complete, full_subject_complete, full_annot_complete,
+          1, colors_complete,
+          paste0(file_display_name, " (référence complète: 1-", sequence_length, ")"),
+          restriction_positions_complete, 1, file_fragment_type
+        )
+
+        # =====================================================================
+        # ONGLET 3 : GLOBAL (NEEDLE) - ALIGNEMENT DIRECT
+        # =====================================================================
+
+        # Pour l'onglet 3, garder l'alignement direct
+        global_length <- nchar(sub_aligned_global)
+        colors_global <- build_sequence_color_map(data_xdna$features, 1, global_length)
+        restriction_positions_global <- build_restriction_position_map(global_length, restriction_sites(), 1)
+
+        alignment_global <- generate_colored_alignment(
+          pat_aligned_global, sub_aligned_global, annot_aligned_global,
+          1, colors_global,
+          paste0(file_display_name, " (alignement global - Needle)"),
+          restriction_positions_global, 1, file_fragment_type
+        )
+
+        # Stocker les résultats
+        align_local_context <- c(align_local_context, alignment_context$html)
+        align_local_complete <- c(align_local_complete, alignment_complete$html)
+        align_global <- c(align_global, alignment_global$html)
+        text_output <- c(text_output, alignment_context$text)
       }
 
       incProgress(0.2, detail = "Finalisation...")
 
-      # Sauvegarde pour les exports
-      alignment_data$results <- align_output
+      # ======================================================================
+      # INTERFACE AVEC ONGLETS
+      # ======================================================================
+
+      # Sauvegarde pour les exports (utiliser le mode contexte par défaut)
+      alignment_data$results <- align_local_context
       alignment_data$text_version <- paste(text_output, collapse = "")
 
-      # Structure HTML finale avec visualisation globale + alignements détaillés
+      # Structure HTML finale avec onglets
       tags$div(
         # Visualisation globale en haut
         HTML(overview_viz),
 
-        # Alignements détaillés en bas
+        # Section des alignements avec onglets
         tags$div(
           id = "align_results",
           class = "results-container",
+
+          # Légende à gauche
           tags$div(
             class = "legend-container",
             HTML(legend_content)
           ),
+
+          # Alignements avec onglets à droite
           tags$div(
             class = "alignments-container",
-            HTML(paste(align_output, collapse = ""))
+
+            # Interface à onglets
+            tabsetPanel(
+              id = "alignment_tabs",
+
+              # Onglet 1 : Local ±200nt (défaut)
+              tabPanel(
+                title = "🔍 Local ±200nt",
+                value = "local_context",
+                tags$div(
+                  style = "margin-top: 10px;",
+                  tags$p(style = "font-size: 12px; color: #6c757d; margin-bottom: 10px;",
+                         "Alignement local (Smith-Waterman) avec ±200 nucléotides autour de la région alignée."),
+                  HTML(paste(align_local_context, collapse = ""))
+                )
+              ),
+
+              # Onglet 2 : Local + référence complète
+              tabPanel(
+                title = "📋 Local + Référence complète",
+                value = "local_complete",
+                tags$div(
+                  style = "margin-top: 10px;",
+                  tags$p(style = "font-size: 12px; color: #6c757d; margin-bottom: 10px;",
+                         "Alignement local (Smith-Waterman) avec la séquence de référence complète."),
+                  HTML(paste(align_local_complete, collapse = ""))
+                )
+              ),
+
+              # Onglet 3 : Global (Needle)
+              tabPanel(
+                title = "🎯 Global (Needle)",
+                value = "global",
+                tags$div(
+                  style = "margin-top: 10px;",
+                  tags$p(style = "font-size: 12px; color: #6c757d; margin-bottom: 10px;",
+                         "Alignement global (Needleman-Wunsch) - Aligne les séquences entières."),
+                  HTML(paste(align_global, collapse = ""))
+                )
+              )
+            )
           )
         )
       )
@@ -1349,13 +1445,55 @@ server_clonage <- function(input, output, session) {
 
         for (enzyme_name in names(sites)) {
           enzyme_sites <- sites[[enzyme_name]]
-          enzyme_seq <- enzymes[[enzyme_name]]
           color <- colors[((site_index - 1) %% length(colors)) + 1]
+
+          # ✅ CORRECTION : Récupérer la séquence de l'enzyme
+          enzyme_seq <- attr(enzyme_sites, "enzyme_sequence")
+          if (is.null(enzyme_seq)) {
+            enzyme_seq <- enzymes[[enzyme_name]]
+          }
+
+          # ✅ CORRECTION : Déterminer la longueur du site correctement
+          if (grepl("Custom[12]_", enzyme_name)) {
+            # Séquence personnalisée sans nom custom
+            enzyme_display <- enzyme_seq
+            site_length <- nchar(enzyme_seq)
+          } else if (enzyme_name == "SfiI" || (!is.null(enzyme_seq) && enzyme_seq == "GGCC.....GGCC")) {
+            # Cas spécial SfiI
+            enzyme_display <- "GGCCNNNNNGGCC"
+            site_length <- 13
+          } else if (!is.null(enzyme_seq) && enzyme_name %in% names(enzymes)) {
+            # Enzyme classique
+            enzyme_display <- enzyme_seq
+            site_length <- nchar(enzyme_seq)
+          } else {
+            # Séquence personnalisée avec nom custom
+            enzyme_display <- ""
+            site_length <- if (!is.null(enzyme_seq)) nchar(enzyme_seq) else 6
+          }
+
+          # ✅ CORRECTION : Calculer début-fin pour chaque site
+          sites_ranges <- character()
+          for (site_pos in enzyme_sites) {
+            site_end <- site_pos + site_length - 1
+            sites_ranges <- c(sites_ranges, paste0(site_pos, "-", site_end))
+          }
+
+          sites_text <- paste(sites_ranges, collapse = ", ")
+
+          # ✅ Affichage selon le type
+          if (enzyme_display == "") {
+            # Nom personnalisé sans parenthèses
+            display_text <- paste0(enzyme_name, " - Sites: ", sites_text)
+          } else {
+            # Enzyme classique ou séquence avec parenthèses
+            display_text <- paste0(enzyme_name, " (", enzyme_display, ") - Sites: ", sites_text)
+          }
 
           html_content <- paste0(html_content,
                                  "<div class='legend-item'>",
                                  "<span class='color-box' style='background-color:", color, ";'></span>",
-                                 "<strong>", enzyme_name, "</strong> (", enzyme_seq, ") - Sites: ", paste(enzyme_sites, collapse = ", "),
+                                 "<strong>", display_text, "</strong>",
                                  "</div>\n")
           site_index <- site_index + 1
         }

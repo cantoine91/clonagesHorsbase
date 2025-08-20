@@ -410,7 +410,7 @@ ui_clonage <- navbarPage(
                           conditionalPanel(
                             condition = "input.enzyme1 == 'CUSTOM'",
                             textInput("enzyme1_custom_seq",
-                                      "Séquence oligo/séquence 1:",
+                                      "Séquence oligo1:",
                                       value = "",
                                       placeholder = "ex: GAATTC, GCTAGC, ATGCGATCG...",
                                       width = "100%")
@@ -421,7 +421,7 @@ ui_clonage <- navbarPage(
                             textInput("enzyme1_custom_name",
                                       "Nom séquence 1 (optionnel):",
                                       value = "",
-                                      placeholder = "ex: MonOligo1",
+                                      placeholder = "ex: Oligo1",
                                       width = "100%")
                           )
                    )
@@ -441,7 +441,7 @@ ui_clonage <- navbarPage(
                           conditionalPanel(
                             condition = "input.enzyme2 == 'CUSTOM'",
                             textInput("enzyme2_custom_seq",
-                                      "Séquence oligo/séquence 2:",
+                                      "Séquence oligo2:",
                                       value = "",
                                       placeholder = "ex: AAGCTT, CTGCAG, TGCAGTCGA...",
                                       width = "100%")
@@ -452,48 +452,20 @@ ui_clonage <- navbarPage(
                             textInput("enzyme2_custom_name",
                                       "Nom séquence 2 (optionnel):",
                                       value = "",
-                                      placeholder = "ex: MonOligo2",
+                                      placeholder = "ex: Oligo2",
                                       width = "100%")
                           )
                    )
                  ),
 
-                 # Message d'aide pour les séquences personnalisées
-                 div(style = "background: #e8f4f8; padding: 8px; border-radius: 4px; margin: 10px 0; font-size: 12px;",
-                     "💡 ", tags$strong("Séquences personnalisées:"),
-                     " Saisissez n'importe quelle séquence d'ADN (oligo etc.). ",
-                     "Seules les lettres A, T, C, G sont acceptées. Idéal pour rechercher des sites de coupure spécifiques ou des séquences d'intérêt."),
-
                  # Affichage des informations sur les sites trouvés
                  div(style = "background: #e8f4f8; padding: 8px; border-radius: 4px; margin-top: 10px; font-family: monospace; font-size: 12px;",
                      textOutput("restriction_info")
-                 ),
-
-                 # Options d'affichage
-                 div(style = "margin-top: 15px; padding: 10px; background: #f1f3f4; border-radius: 4px;",
-                     h5("⚙️ Options d'affichage", style = "color: #b22222; margin-top: 0; margin-bottom: 10px;"),
-
-                     checkboxInput("show_restriction_context",
-                                   label = "Affichage restreint : ±200nt autour de l'alignement uniquement",
-                                   value = TRUE),
-
-                     conditionalPanel(
-                       condition = "input.show_restriction_context == true",
-                       div(style = "margin-top: 5px; padding: 5px; background: #fff3cd; border-left: 3px solid #ffc107; font-size: 12px;",
-                           "🔍 ", tags$strong("Mode restreint :"), " Seuls ±200nt autour de chaque alignement seront affichés.",
-                           br(),
-                           "Idéal pour se concentrer sur la zone d'intérêt sans voir toute la séquence.")
-                     ),
-
-                     conditionalPanel(
-                       condition = "input.show_restriction_context == false",
-                       div(style = "margin-top: 5px; padding: 5px; background: #e8f5e8; border-left: 3px solid #4caf50; font-size: 12px;",
-                           "📋 ", tags$strong("Mode complet :"), " La séquence complète de référence sera affichée.",
-                           br(),
-                           "Permet de voir l'alignement dans le contexte global de la carte.")
-                     )
                  )
-               ),
+
+                ),
+
+
 
                # ==============================================================================
                # SECTION FICHIERS AB1
