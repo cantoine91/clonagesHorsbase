@@ -1,10 +1,11 @@
 # ==============================================================================
-# CONFIG_CLONAGE.R
+# CONFIG_CLONAGE.R - Version nettoyée
 # Configuration automatique des environnements pour HGX Clonage
-# Détection automatique dev/production et chemins appropriés
+# Détection automatique développement/production et chemins appropriés
 # ==============================================================================
 
 #' Détection automatique de l'environnement d'exécution
+#' Analyse le système pour déterminer si on est en développement ou production
 #' @return Chaîne indiquant l'environnement ("development" ou "production")
 detect_environment <- function() {
   # Méthode 1: Vérifier si on est dans un conteneur Docker
@@ -12,7 +13,7 @@ detect_environment <- function() {
     return("production")
   }
 
-  # Méthode 2: Vérifier les chemins Windows (dev local)
+  # Méthode 2: Vérifier les chemins Windows (développement local typique)
   if (.Platform$OS.type == "windows") {
     return("development")
   }
@@ -32,16 +33,13 @@ detect_environment <- function() {
 }
 
 #' Configuration des chemins selon l'environnement détecté
+#' Définit automatiquement les chemins vers les fichiers GenBank et séquences
 #' @return Liste avec chemins configurés et informations d'environnement
 get_config <- function() {
   env <- detect_environment()
 
-  cat("DEBUG get_config - Environnement détecté:", env, "\n")
-  cat("DEBUG get_config - OS type:", .Platform$OS.type, "\n")
-
   if (env == "development") {
     # ========== ENVIRONNEMENT DE DÉVELOPPEMENT ==========
-    cat("DEBUG - Configuration développement\n")
 
     # Chemins pour développement local (Windows)
     config <- list(
@@ -50,13 +48,8 @@ get_config <- function() {
       environment = "development"
     )
 
-    cat("DEBUG - Chemin Windows défini:", config$xdna_dir, "\n")
-    cat("DEBUG - Chemin Windows existe:", dir.exists(config$xdna_dir), "\n")
-
-    # CORRECTION : Chemins alternatifs pour dev Linux/Mac
+    # Chemins alternatifs pour développement Linux/Mac
     if (.Platform$OS.type != "windows") {
-      cat("DEBUG - OS non-Windows détecté, test chemins Linux\n")
-
       # Tester plusieurs chemins possibles en développement Linux
       linux_paths <- c(
         "/mnt/carte_nouveaux_clonages",
@@ -66,7 +59,6 @@ get_config <- function() {
       )
 
       for (path in linux_paths) {
-        cat("DEBUG - Test chemin:", path, "- Existe:", dir.exists(path), "\n")
         if (dir.exists(path)) {
           config$xdna_dir <- path
           if (path == "data/genbank") {
@@ -74,7 +66,6 @@ get_config <- function() {
           } else {
             config$seq_dir <- "/data/production/SEQ"
           }
-          cat("DEBUG - Chemin Linux sélectionné:", config$xdna_dir, "\n")
           break
         }
       }
@@ -82,7 +73,6 @@ get_config <- function() {
 
   } else {
     # ========== ENVIRONNEMENT DE PRODUCTION ==========
-    cat("DEBUG - Configuration production\n")
 
     config <- list(
       xdna_dir = "/mnt/carte_nouveaux_clonages",
@@ -90,13 +80,8 @@ get_config <- function() {
       environment = "production"
     )
 
-    cat("DEBUG - Chemin production défini:", config$xdna_dir, "\n")
-    cat("DEBUG - Chemin production existe:", dir.exists(config$xdna_dir), "\n")
-
     # Vérification des chemins de production et fallbacks
     if (!dir.exists(config$xdna_dir)) {
-      cat("DEBUG - Chemin principal non trouvé, test alternatives\n")
-
       alt_paths <- list(
         list(xdna = "/data/SEQ/carte_nouveaux_clonages", seq = "/data/SEQ"),
         list(xdna = "../data/production/SEQ/carte_nouveaux_clonages", seq = "../data/production/SEQ"),
@@ -104,26 +89,20 @@ get_config <- function() {
       )
 
       for (alt in alt_paths) {
-        cat("DEBUG - Test alternatif:", alt$xdna, "- Existe:", dir.exists(alt$xdna), "\n")
         if (dir.exists(alt$xdna)) {
           config$xdna_dir <- alt$xdna
           config$seq_dir <- alt$seq
-          cat("DEBUG - Alternatif sélectionné:", config$xdna_dir, "\n")
           break
         }
       }
     }
   }
 
-  cat("DEBUG - Configuration finale:\n")
-  cat("  - xdna_dir:", config$xdna_dir, "\n")
-  cat("  - seq_dir:", config$seq_dir, "\n")
-  cat("  - environment:", config$environment, "\n")
-
   return(config)
 }
 
 #' Validation de la configuration
+#' Vérifie que les chemins configurés sont accessibles
 #' @param config Configuration à valider
 #' @return TRUE si la configuration est valide, FALSE sinon
 validate_config <- function(config) {
@@ -142,10 +121,11 @@ validate_config <- function(config) {
 }
 
 #' Affichage des informations de configuration (pour debug)
+#' Fournit un rapport détaillé de l'état de la configuration
 #' @param config Configuration à afficher
 display_config_info <- function(config) {
   cat("🔧 Configuration HGX Clonage\n")
-  cat("══════════════════════════════\n")
+  cat("═══════════════════════════════\n")
   cat("Environnement détecté:", config$environment, "\n")
   cat("Système d'exploitation:", .Platform$OS.type, "\n")
   cat("Docker detecté:", file.exists("/.dockerenv"), "\n")
@@ -156,7 +136,7 @@ display_config_info <- function(config) {
   cat("   - GenBank accessible:", dir.exists(config$xdna_dir), "\n")
   cat("   - Séquences accessibles:", dir.exists(config$seq_dir), "\n")
 
-  # Debug détaillé des montages - MISE À JOUR
+  # Debug détaillé des montages
   cat("\n🔍 Debug montages carte_nouveaux_clonages:\n")
   cat("   - /mnt existe:", dir.exists("/mnt"), "\n")
   cat("   - /mnt/carte_nouveaux_clonages existe:", dir.exists("/mnt/carte_nouveaux_clonages"), "\n")
@@ -231,7 +211,7 @@ display_config_info <- function(config) {
   # Affichage du contenu des dossiers séquences (si accessibles)
   if (dir.exists(config$seq_dir)) {
     seq_folders <- list.dirs(config$seq_dir, recursive = FALSE, full.names = FALSE)
-    cat("\n📁 Dossiers séquences dans", config$seq_dir, ":\n")
+    cat("\n🔍 Dossiers séquences dans", config$seq_dir, ":\n")
     cat("   - Dossiers trouvés:", length(seq_folders), "\n")
     if (length(seq_folders) > 0) {
       cat("     Exemples:", paste(head(seq_folders, 3), collapse = ", "), "\n")
@@ -240,5 +220,5 @@ display_config_info <- function(config) {
     cat("\n❌ Dossier séquences non accessible:", config$seq_dir, "\n")
   }
 
-  cat("══════════════════════════════\n")
+  cat("═══════════════════════════════\n")
 }

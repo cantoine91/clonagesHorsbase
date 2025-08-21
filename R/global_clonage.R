@@ -1,30 +1,32 @@
 # ==============================================================================
-# GLOBAL_CLONAGE.R
+# GLOBAL_CLONAGE.R - Version nettoyée
+# Module principal contenant les fonctions utilitaires et de traitement
+# pour l'application HGX d'analyse de séquences de clonage
 # ==============================================================================
 
 library(Biostrings)
 
 # ==============================================================================
-# CONSTANTES GLOBALES
+# CONSTANTES GLOBALES - Configuration de l'interface et des couleurs
 # ==============================================================================
 
-# Couleurs pour les sites de restriction
+# Palette de couleurs pour les sites de restriction (enzymes)
 RESTRICTION_COLORS <- c("#FF0000", "#0000FF", "#00FF00", "#FF8000", "#8000FF", "#00FFFF")
 
-# Couleurs pour les clones dans la visualisation
+# Palette de couleurs pour différencier les clones dans la visualisation
 CLONE_COLORS <- c("#28a745", "#17a2b8", "#ffc107", "#dc3545", "#6f42c1", "#fd7e14")
 
-# Paramètres de configuration
+# Paramètres de configuration par défaut pour l'affichage
 CONFIG_DEFAULTS <- list(
-  line_length = 60,          # Longueur des lignes d'alignement
-  context_length = 200,      # Contexte autour des sites de restriction
-  svg_width = 800,           # Largeur fixe du SVG
-  svg_ruler_margin = 160,    # Marge pour les labels du SVG
+  line_length = 60,          # Nombre de nucléotides par ligne d'alignement
+  context_length = 200,      # Contexte affiché autour des sites de restriction (nucléotides)
+  svg_width = 800,           # Largeur fixe du SVG pour la visualisation globale
+  svg_ruler_margin = 160,    # Marge pour les labels dans le SVG
   font_size_svg = 10,        # Taille de police dans le SVG
   font_size_tooltip = 11     # Taille de police des tooltips
 )
 
-# Styles CSS réutilisés
+# Styles CSS réutilisés pour l'affichage des alignements
 CSS_STYLES <- list(
   base_cell = "font-family: Courier New, monospace; text-align: center; padding: 0; margin: 0; border: 0; width: 1ch; min-width: 1ch; max-width: 1ch;",
   prefix_label = "font-family: Courier New, monospace; padding: 0; margin: 0; text-align: left; width: 60px; min-width: 60px; max-width: 60px; white-space: nowrap;",
@@ -38,21 +40,23 @@ CSS_STYLES <- list(
 # ==============================================================================
 
 #' Nettoyage et normalisation d'une séquence ADN
+#' Supprime les espaces, retours à la ligne et convertit en majuscules
 #' @param sequence_text Texte contenant la séquence à nettoyer
 #' @return Séquence nettoyée en majuscules sans espaces ni retours à la ligne
 clean_sequence <- function(sequence_text) {
+  # Suppression des caractères non-nucléotidiques
   sequence_text <- gsub("[\r\n ]", "", sequence_text)
-  toupper(sequence_text)
+  return(toupper(sequence_text))
 }
 
 #' Calcul de la région d'affichage basée sur l'alignement réel
+#' Détermine quelle portion de la séquence afficher autour de l'alignement
 #' @param alignment_start Position de début de l'alignement
 #' @param alignment_end Position de fin de l'alignement
 #' @param sequence_length Longueur totale de la séquence
 #' @param context_length Nombre de nucléotides de contexte (défaut: 200)
 #' @return Liste avec start et end de la région à afficher
 calculate_alignment_display_region <- function(alignment_start, alignment_end, sequence_length, context_length = 200) {
-
   # Région basée sur l'alignement réel avec contexte
   start_pos <- max(1, alignment_start - context_length)
   end_pos <- min(sequence_length, alignment_end + context_length)
@@ -60,6 +64,12 @@ calculate_alignment_display_region <- function(alignment_start, alignment_end, s
   return(list(start = start_pos, end = end_pos))
 }
 
+#' Calcul de la région d'affichage basée sur les sites de restriction
+#' Détermine quelle portion afficher en fonction des positions des enzymes
+#' @param restriction_sites_list Liste des sites de restriction par enzyme
+#' @param sequence_length Longueur totale de la séquence
+#' @param context_length Nombre de nucléotides de contexte (défaut: 200)
+#' @return Liste avec start et end de la région à afficher
 calculate_restriction_display_region <- function(restriction_sites_list, sequence_length, context_length = 200) {
   if (length(restriction_sites_list) == 0) {
     return(list(start = 1, end = sequence_length))
@@ -78,7 +88,7 @@ calculate_restriction_display_region <- function(restriction_sites_list, sequenc
     return(list(start = 1, end = sequence_length))
   }
 
-  # Trier les sites
+  # Trier les sites pour déterminer la région d'intérêt
   all_sites <- sort(all_sites)
 
   if (length(all_sites) == 1) {
@@ -99,10 +109,11 @@ calculate_restriction_display_region <- function(restriction_sites_list, sequenc
 }
 
 # ==============================================================================
-# ENZYMES DE RESTRICTION
+# ENZYMES DE RESTRICTION - Base de données et recherche
 # ==============================================================================
 
 #' Base de données des enzymes de restriction communes
+#' Contient les séquences de reconnaissance des enzymes les plus utilisées
 #' @return Liste nommée des séquences de reconnaissance des enzymes
 get_restriction_enzymes <- function() {
   return(list(
@@ -132,7 +143,7 @@ get_restriction_enzymes <- function() {
     "SalI" = "GTCGAC",
     "SbfI" = "CCTGCAGG",
     "ScaI" = "AGTACT",
-    "SfiI" = "GGCC.....GGCC", # Pattern spécial pour SfiI
+    "SfiI" = "GGCC.....GGCC", # Pattern spécial pour SfiI (motif dégénéré)
     "SmaI" = "CCCGGG",
     "SpeI" = "ACTAGT",
     "SrfI" = "GCCCGGGC",
@@ -145,9 +156,10 @@ get_restriction_enzymes <- function() {
 }
 
 #' Recherche de sites de restriction dans une séquence
+#' Utilise des expressions régulières pour trouver les motifs de reconnaissance
 #' @param sequence Séquence ADN (DNAString ou caractère)
 #' @param enzyme_sequence Séquence de reconnaissance de l'enzyme
-#' @return Vecteur des positions de début des sites trouvés
+#' @return Vecteur des positions de début des sites trouvés (indexation à partir de 1)
 find_restriction_sites <- function(sequence, enzyme_sequence) {
   if (is.null(sequence) || is.null(enzyme_sequence) || enzyme_sequence == "") {
     return(integer(0))
@@ -161,7 +173,7 @@ find_restriction_sites <- function(sequence, enzyme_sequence) {
   sequence <- toupper(sequence)
   enzyme_sequence <- toupper(enzyme_sequence)
 
-  # Gestion spéciale pour SfiI
+  # Gestion spéciale pour SfiI qui a un motif dégénéré (GGCC + 5 bases quelconques + GGCC)
   if (enzyme_sequence == "GGCC.....GGCC") {
     pattern <- "GGCC[ATCG]{5}GGCC"
     matches <- gregexpr(pattern, sequence, perl = TRUE)[[1]]
@@ -170,93 +182,70 @@ find_restriction_sites <- function(sequence, enzyme_sequence) {
       return(integer(0))
     }
 
-    # ✅ IMPORTANT : gregexpr retourne des positions 1-indexées (correct)
-    # Donc position 1361 dans la séquence = position 1361 rapportée
-    cat("🔍 SfiI sites trouvés aux positions:", matches, "\n")
     return(as.integer(matches))
   }
 
-  # Recherche normale pour les autres enzymes
+  # Recherche normale pour les autres enzymes (motif exact)
   matches <- gregexpr(enzyme_sequence, sequence, fixed = TRUE)[[1]]
 
   if (matches[1] == -1) {
     return(integer(0))
   }
 
-  # ✅ DEBUG : Vérifier les positions trouvées
-  cat("🔍 Enzyme", enzyme_sequence, "trouvé aux positions:", matches, "\n")
-
-  # ✅ VÉRIFICATION : Les positions de gregexpr sont-elles correctes ?
-  for (pos in matches[1:min(3, length(matches))]) {
-    found_seq <- substr(sequence, pos, pos + nchar(enzyme_sequence) - 1)
-    cat("   Position", pos, "→ séquence trouvée:", found_seq, "\n")
-  }
-
   return(as.integer(matches))
 }
 
 #' Construction d'une carte des positions de sites de restriction
+#' Crée un vecteur logique indiquant quelles positions contiennent des sites
 #' @param sequence_length Longueur de la séquence
 #' @param restriction_sites Liste des sites de restriction par enzyme
 #' @param alignment_start Position de début de l'alignement (défaut: 1)
 #' @return Vecteur logique indiquant les positions des sites de restriction
 build_restriction_position_map <- function(sequence_length, restriction_sites, alignment_start = 1) {
+  # Initialiser toutes les positions comme non-restrictives
   is_restriction <- rep(FALSE, sequence_length)
 
   if (!is.null(restriction_sites) && length(restriction_sites) > 0) {
-
     for (enzyme_name in names(restriction_sites)) {
       sites <- restriction_sites[[enzyme_name]]
       if (length(sites) > 0) {
 
-        # Récupérer la séquence de l'enzyme
+        # Récupérer la séquence de l'enzyme pour déterminer la longueur du site
         enzyme_sequence <- attr(sites, "enzyme_sequence")
 
         if (!is.null(enzyme_sequence)) {
           if (enzyme_sequence == "GGCC.....GGCC") {
-            site_length <- 13
+            site_length <- 13  # Longueur spéciale pour SfiI
           } else {
             site_length <- nchar(enzyme_sequence)
           }
         } else {
+          # Fallback vers la base de données d'enzymes
           enzymes <- get_restriction_enzymes()
           if (enzyme_name %in% names(enzymes)) {
             site_length <- nchar(enzymes[[enzyme_name]])
           } else {
-            site_length <- 6
+            site_length <- 6  # Longueur par défaut
           }
         }
 
+        # Marquer toutes les positions couvertes par chaque site
         for (site_pos in sites) {
-          # ✅ CORRECTION : Pas de décalage supplémentaire
-          # Si site_pos = 1361 et alignment_start = 1329
-          # Alors relative_start = 1361 - 1329 + 1 = 33
-
           site_end <- site_pos + site_length - 1
 
           # Calculer les positions relatives dans la fenêtre d'affichage
           relative_start <- site_pos - alignment_start + 1
           relative_end <- site_end - alignment_start + 1
 
-          # ✅ DEBUG détaillé
-          cat("🔍 GRISEMENT", enzyme_name, ":\n")
-          cat("   Site global:", site_pos, "-", site_end, "\n")
-          cat("   Alignment start:", alignment_start, "\n")
-          cat("   Positions relatives:", relative_start, "-", relative_end, "\n")
-          cat("   Sequence length:", sequence_length, "\n")
-
           # Appliquer le grisement si dans les bornes
           if (relative_start <= sequence_length && relative_end >= 1) {
             start_pos <- max(1, relative_start)
             end_pos <- min(sequence_length, relative_end)
 
+            # Marquer toutes les positions du site comme restrictives
             for (pos in start_pos:end_pos) {
               is_restriction[pos] <- TRUE
             }
-
-            cat("   → Grisement appliqué de", start_pos, "à", end_pos, "\n")
-          } else {
-            cat("   → Pas de grisement (hors bornes)\n")
           }
         }
       }
@@ -267,6 +256,8 @@ build_restriction_position_map <- function(sequence_length, restriction_sites, a
 }
 
 #' Génération de la légende HTML pour les sites de restriction
+#' Crée une légende colorée listant tous les sites trouvés
+#' MODIFIÉ: Ajoute le tri par position du premier site
 #' @param restriction_sites_list Liste des sites de restriction
 #' @return HTML formaté pour la légende des sites de restriction
 generate_restriction_legend_formatted <- function(restriction_sites_list) {
@@ -275,84 +266,104 @@ generate_restriction_legend_formatted <- function(restriction_sites_list) {
   }
 
   colors <- RESTRICTION_COLORS
-  legend_items <- character()
+  enzymes <- get_restriction_enzymes()
 
-  site_index <- 1
+  # NOUVEAU: Préparer les données pour le tri
+  enzyme_data_for_sorting <- list()
+
   for (enzyme_name in names(restriction_sites_list)) {
     sites <- restriction_sites_list[[enzyme_name]]
-    if (length(sites) > 0) {
-      color <- colors[((site_index - 1) %% length(colors)) + 1]
-      enzymes <- get_restriction_enzymes()
+    if (length(sites) == 0) next
 
-      # Récupérer la séquence de l'enzyme
-      enzyme_seq <- attr(sites, "enzyme_sequence")
-      if (is.null(enzyme_seq)) {
-        enzyme_seq <- enzymes[[enzyme_name]]
-      }
+    # Récupérer la séquence de l'enzyme
+    enzyme_seq <- attr(sites, "enzyme_sequence")
+    if (is.null(enzyme_seq)) {
+      enzyme_seq <- enzymes[[enzyme_name]]
+    }
 
-      # Déterminer la longueur et l'affichage
-      if (grepl("Custom[12]_", enzyme_name)) {
-        enzyme_display <- enzyme_seq
-        site_length <- nchar(enzyme_seq)
-      } else if (enzyme_name == "SfiI" || (!is.null(enzyme_seq) && enzyme_seq == "GGCC.....GGCC")) {
-        enzyme_display <- "GGCCNNNNNGGCC"
-        site_length <- 13
-      } else if (!is.null(enzyme_seq) && enzyme_name %in% names(enzymes)) {
-        enzyme_display <- enzyme_seq
-        site_length <- nchar(enzyme_seq)
-      } else {
-        enzyme_display <- ""
-        site_length <- if (!is.null(enzyme_seq)) nchar(enzyme_seq) else 6
-      }
+    # Déterminer l'affichage selon le type d'enzyme
+    if (grepl("Custom[12]_", enzyme_name)) {
+      enzyme_display <- enzyme_seq
+      site_length <- nchar(enzyme_seq)
+    } else if (enzyme_name == "SfiI" || (!is.null(enzyme_seq) && enzyme_seq == "GGCC.....GGCC")) {
+      enzyme_display <- "GGCCNNNNNGGCC"
+      site_length <- 13
+    } else if (!is.null(enzyme_seq) && enzyme_name %in% names(enzymes)) {
+      enzyme_display <- enzyme_seq
+      site_length <- nchar(enzyme_seq)
+    } else {
+      enzyme_display <- ""
+      site_length <- if (!is.null(enzyme_seq)) nchar(enzyme_seq) else 6
+    }
 
-      # ✅ CORRECTION : Calculer début-fin SANS décalage supplémentaire
-      sites_ranges <- character()
-      for (site_pos in sites) {
-        # ✅ Si gregexpr retourne 1361, alors site_end = 1361 + 6 - 1 = 1366
-        site_end <- site_pos + site_length - 1
-        sites_ranges <- c(sites_ranges, paste0(site_pos, "-", site_end))
+    # Calculer les plages de positions pour chaque site
+    sites_ranges <- character()
+    for (site_pos in sites) {
+      site_end <- site_pos + site_length - 1
+      sites_ranges <- c(sites_ranges, paste0(site_pos, "-", site_end))
+    }
 
-        # ✅ DEBUG : Vérifier le calcul
-        cat("🔍 Site", enzyme_name, ":", site_pos, "→", site_end, "(longueur:", site_length, ")\n")
-      }
+    sites_text <- paste(sites_ranges, collapse = ", ")
 
-      sites_text <- paste(sites_ranges, collapse = ", ")
+    # Construire le texte d'affichage
+    if (enzyme_display == "") {
+      display_text <- paste0(enzyme_name, " - Sites: ", sites_text)
+    } else {
+      display_text <- paste0(enzyme_name, " (", enzyme_display, ") - Sites: ", sites_text)
+    }
 
-      # Affichage selon le type
-      if (enzyme_display == "") {
-        display_text <- paste0(enzyme_name, " - Sites: ", sites_text)
-      } else {
-        display_text <- paste0(enzyme_name, " (", enzyme_display, ") - Sites: ", sites_text)
-      }
+    # NOUVEAU: Stocker avec la position du premier site pour le tri
+    enzyme_data_for_sorting[[length(enzyme_data_for_sorting) + 1]] <- list(
+      enzyme_name = enzyme_name,
+      first_site_pos = min(sites),  # Position du premier site
+      display_text = display_text
+    )
+  }
 
+  # NOUVEAU: Trier par position du premier site de chaque enzyme
+  if (length(enzyme_data_for_sorting) > 0) {
+    enzyme_data_for_sorting <- enzyme_data_for_sorting[order(sapply(enzyme_data_for_sorting, function(x) x$first_site_pos))]
+
+    legend_items <- character()
+
+    for (i in seq_along(enzyme_data_for_sorting)) {
+      enzyme_data <- enzyme_data_for_sorting[[i]]
+
+      # Attribuer une couleur cyclique selon l'ordre trié
+      color <- colors[((i - 1) %% length(colors)) + 1]
+
+      # Créer l'élément de légende HTML
       legend_items <- c(legend_items,
                         paste0("<div style='margin-bottom: 5px;'><span style='color:", color,
                                "; font-weight: bold; font-size: 16px;'>■ </span> ",
-                               "<span style='font-size: 12px;'>", display_text, "</span></div>"))
-      site_index <- site_index + 1
+                               "<span style='font-size: 12px;'>", enzyme_data$display_text, "</span></div>"))
     }
-  }
 
-  if (length(legend_items) > 0) {
     return(paste0("<h4 style='margin-top: 15px; color: #b22222;'>Sites de restriction</h4>",
+                  "<div style='font-size: 11px; color: #6c757d; margin-bottom: 10px; font-style: italic;'>",
+                  "(Enzymes triées par position du premier site)</div>",
                   paste(legend_items, collapse = "")))
   }
 
   return("")
 }
+
 # ==============================================================================
-# FONCTIONS D'ALIGNEMENT
+# FONCTIONS D'ALIGNEMENT - Gestion des séquences alignées
 # ==============================================================================
 
 #' Création d'une séquence pattern complète avec gaps
+#' Étend une séquence alignée pour couvrir toute la longueur de référence
 #' @param aligned_pattern Séquence pattern alignée
 #' @param start_position Position de début dans la séquence de référence
 #' @param total_length Longueur totale de la séquence de référence
 #' @return Séquence complète avec gaps aux positions non alignées
 create_full_pattern_with_gaps <- function(aligned_pattern, start_position, total_length) {
+  # Initialiser avec des gaps partout
   full_sequence <- rep("-", total_length)
   aligned_chars <- strsplit(aligned_pattern, "")[[1]]
 
+  # Remplir les positions alignées
   for (i in seq_along(aligned_chars)) {
     position <- start_position + i - 1
     if (position <= total_length) {
@@ -364,14 +375,17 @@ create_full_pattern_with_gaps <- function(aligned_pattern, start_position, total
 }
 
 #' Création d'une annotation complète avec espaces
+#' Étend une annotation d'alignement pour couvrir toute la longueur de référence
 #' @param aligned_annotation Annotation alignée
 #' @param start_position Position de début dans la séquence de référence
 #' @param total_length Longueur totale de la séquence de référence
 #' @return Annotation complète avec espaces aux positions non alignées
 create_full_annotation_with_spaces <- function(aligned_annotation, start_position, total_length) {
+  # Initialiser avec des espaces partout
   full_annotation <- rep(" ", total_length)
   annotation_chars <- strsplit(aligned_annotation, "")[[1]]
 
+  # Remplir les positions avec annotation
   for (i in seq_along(annotation_chars)) {
     position <- start_position + i - 1
     if (position <= total_length) {
@@ -383,6 +397,7 @@ create_full_annotation_with_spaces <- function(aligned_annotation, start_positio
 }
 
 #' Annotation des mutations entre deux séquences alignées
+#' Compare deux séquences et marque les correspondances exactes
 #' @param pattern_sequence Séquence pattern alignée
 #' @param subject_sequence Séquence sujet alignée
 #' @return Chaîne d'annotation avec "|" pour les correspondances exactes
@@ -398,20 +413,21 @@ annotate_sequence_mutations <- function(pattern_sequence, subject_sequence) {
   subject_chars <- strsplit(subject_sequence, "")[[1]]
   annotation <- character(length(pattern_chars))
 
+  # Comparer caractère par caractère
   for (i in seq_along(pattern_chars)) {
     if (pattern_chars[i] == subject_chars[i] &&
         pattern_chars[i] != "-" && subject_chars[i] != "-") {
-      annotation[i] <- "|"
+      annotation[i] <- "|"  # Correspondance exacte
     } else {
-      annotation[i] <- " "
+      annotation[i] <- " "  # Différence ou gap
     }
   }
 
   return(paste(annotation, collapse = ""))
 }
 
-
 #' Création des cellules d'annotation avec surlignage des mutations
+#' Génère des cellules HTML avec mise en évidence des différences
 #' @param annotation_chars Caractères d'annotation
 #' @param base_style Style CSS de base
 #' @param start_position Position de début
@@ -420,14 +436,14 @@ annotate_sequence_mutations <- function(pattern_sequence, subject_sequence) {
 create_annotation_cells_with_mutation_highlight <- function(annotation_chars, base_style, start_position = 1, sequence_type = "annotation") {
   cells <- character()
 
-  # Trouver la première et dernière position avec '|'
+  # Trouver la première et dernière position avec '|' (correspondances)
   match_positions <- which(annotation_chars == "|")
 
   if (length(match_positions) > 0) {
     first_match <- match_positions[1]
     last_match <- match_positions[length(match_positions)]
   } else {
-    # Si pas de '|', pas de surlignage
+    # Si pas de correspondances, pas de surlignage
     first_match <- 0
     last_match <- 0
   }
@@ -435,9 +451,7 @@ create_annotation_cells_with_mutation_highlight <- function(annotation_chars, ba
   for (i in seq_along(annotation_chars)) {
     style <- base_style
 
-    # Ajouter le fond rouge si :
-    # 1. On est dans la zone d'alignement (du premier au dernier '|')
-    # 2. ET le caractère n'est pas '|' (donc c'est une mutation)
+    # Ajouter le fond rouge pour les mutations dans la zone d'alignement
     if (first_match > 0 &&
         i >= first_match &&
         i <= last_match &&
@@ -454,10 +468,11 @@ create_annotation_cells_with_mutation_highlight <- function(annotation_chars, ba
 }
 
 # ==============================================================================
-# PARSING DES FEATURES GENBANK
+# PARSING DES FEATURES GENBANK - Extraction des annotations
 # ==============================================================================
 
 #' Extraction de la couleur hexadécimale des features SerialCloner
+#' Parse les couleurs personnalisées définies dans les fichiers GenBank
 #' @param feature_lines Lignes de la feature GenBank
 #' @return Couleur hexadécimale (défaut: "#000000")
 extract_serialcloner_color <- function(feature_lines) {
@@ -474,6 +489,7 @@ extract_serialcloner_color <- function(feature_lines) {
 }
 
 #' Parsing des features GenBank
+#' Extrait toutes les features (annotations) d'un fichier GenBank
 #' @param features_lines Lignes contenant les features du fichier GenBank
 #' @return Liste des features parsées avec type, position, couleur et nom
 parse_genbank_features <- function(features_lines) {
@@ -487,7 +503,7 @@ parse_genbank_features <- function(features_lines) {
     is_position_only <- grepl("^\\s+\\d+\\.\\.\\d+", line)
 
     if (is_new_feature_with_type || is_position_only) {
-      # Sauvegarder la feature précédente
+      # Sauvegarder la feature précédente si elle existe
       if (!is.null(current_feature)) {
         current_feature$color <- extract_serialcloner_color(current_feature_lines)
         features_list[[length(features_list) + 1]] <- current_feature
@@ -505,7 +521,7 @@ parse_genbank_features <- function(features_lines) {
       )
       current_feature_lines <- character()
 
-      # Gestion des positions orphelines
+      # Gestion spéciale des positions orphelines
       if (is_position_only && i < length(features_lines)) {
         next_line <- features_lines[i + 1]
         if (grepl("/label\\s*=", next_line)) {
@@ -517,7 +533,7 @@ parse_genbank_features <- function(features_lines) {
       }
     }
 
-    # Accumulation des lignes et extraction du nom
+    # Accumulation des lignes et extraction du nom si présent
     if (!is.null(current_feature)) {
       current_feature_lines <- c(current_feature_lines, line)
       feature_name <- extract_feature_name(line)
@@ -536,7 +552,7 @@ parse_genbank_features <- function(features_lines) {
   return(features_list)
 }
 
-#' Extraction du type de feature
+#' Extraction du type de feature depuis une ligne GenBank
 #' @param line Ligne contenant la déclaration de feature
 #' @return Type de feature ou "unknown"
 extract_feature_type <- function(line) {
@@ -547,17 +563,18 @@ extract_feature_type <- function(line) {
   return("unknown")
 }
 
-#' Extraction de la position de la feature
+#' Extraction de la position de la feature depuis une ligne GenBank
+#' Parse les positions au format "start..end" ou "complement(start..end)"
 #' @param line Ligne contenant la position
 #' @return Position au format "start..end" ou NA
 extract_feature_position <- function(line) {
-  # Position normale
+  # Position normale (start..end)
   position_match <- regmatches(line, regexpr("\\d+\\.\\.\\d+", line))
   if (length(position_match) > 0) {
     return(position_match)
   }
 
-  # Position complement
+  # Position complement (complement(start..end))
   complement_match <- regmatches(line, regexpr("complement\\(\\d+\\.\\.\\d+\\)", line))
   if (length(complement_match) > 0) {
     position_match <- regmatches(complement_match, regexpr("\\d+\\.\\.\\d+", complement_match))
@@ -570,15 +587,18 @@ extract_feature_position <- function(line) {
 }
 
 #' Extraction du nom de la feature (label ou gene)
+#' Parse les attributs /label= et /gene= des features GenBank
 #' @param line Ligne contenant le label ou gene
 #' @return Nom de la feature ou NULL
 extract_feature_name <- function(line) {
-  # Gestion des labels
+  # Gestion des labels (/label="nom" ou /label=nom)
   if (grepl("/label\\s*=", line)) {
     if (grepl('/label\\s*=\\s*"[^"]*"', line)) {
+      # Label entre guillemets
       label_match <- regmatches(line, regexpr('/label\\s*=\\s*"[^"]*"', line))
       return(gsub('/label\\s*=\\s*"([^"]*)"', '\\1', label_match))
     } else {
+      # Label sans guillemets
       label_match <- regmatches(line, regexpr('/label\\s*=\\s*.+', line))
       if (length(label_match) > 0) {
         return(gsub('/label\\s*=\\s*', '', label_match))
@@ -586,12 +606,14 @@ extract_feature_name <- function(line) {
     }
   }
 
-  # Gestion des genes
+  # Gestion des genes (/gene="nom" ou /gene=nom)
   if (grepl("/gene\\s*=", line)) {
     if (grepl('/gene\\s*=\\s*"[^"]*"', line)) {
+      # Gene entre guillemets
       gene_match <- regmatches(line, regexpr('/gene\\s*=\\s*"[^"]*"', line))
       return(gsub('/gene\\s*=\\s*"([^"]*)"', '\\1', gene_match))
     } else {
+      # Gene sans guillemets
       gene_match <- regmatches(line, regexpr('/gene\\s*=\\s*.+', line))
       if (length(gene_match) > 0) {
         return(gsub('/gene\\s*=\\s*', '', gene_match))
@@ -603,10 +625,11 @@ extract_feature_name <- function(line) {
 }
 
 # ==============================================================================
-# GESTION DES COULEURS
+# GESTION DES COULEURS - Configuration et application
 # ==============================================================================
 
 #' Configuration des couleurs par défaut pour les features connues
+#' Définit des couleurs spécifiques pour les features couramment utilisées
 #' @return Liste nommée des couleurs par défaut
 get_default_feature_colors <- function() {
   return(list(
@@ -620,6 +643,7 @@ get_default_feature_colors <- function() {
 }
 
 #' Obtention de la couleur par nom de feature
+#' Recherche la couleur associée à une feature ou retourne une couleur par défaut
 #' @param feature_name Nom de la feature
 #' @return Couleur hexadécimale (défaut: "#888888")
 get_color_by_feature_name <- function(feature_name) {
@@ -632,6 +656,7 @@ get_color_by_feature_name <- function(feature_name) {
 }
 
 #' Construction du vecteur de couleurs pour la séquence
+#' Associe une couleur à chaque position selon les features GenBank
 #' @param features_lines Lignes des features GenBank
 #' @param alignment_start Position de début de l'alignement
 #' @param sequence_length Longueur de la séquence
@@ -646,6 +671,7 @@ build_sequence_color_map <- function(features_lines, alignment_start, sequence_l
       next
     }
 
+    # Parser les positions au format "start..end"
     position_bounds <- as.numeric(unlist(strsplit(position_string, "\\.\\.")))
     if (length(position_bounds) != 2) {
       next
@@ -654,13 +680,13 @@ build_sequence_color_map <- function(features_lines, alignment_start, sequence_l
     feature_start <- position_bounds[1]
     feature_end <- position_bounds[2]
 
-    # Détermination de la couleur
+    # Détermination de la couleur (priorité aux couleurs custom, puis par défaut)
     color_to_use <- feature$color
     if (color_to_use == "#000000") {
       color_to_use <- get_color_by_feature_name(feature$name)
     }
 
-    # Application de la couleur sur la plage
+    # Application de la couleur sur la plage de positions
     for (i in seq_len(sequence_length)) {
       reference_position <- alignment_start + i - 1
       if (reference_position >= feature_start && reference_position <= feature_end) {
@@ -673,6 +699,8 @@ build_sequence_color_map <- function(features_lines, alignment_start, sequence_l
 }
 
 #' Génération de la légende HTML des couleurs
+#' Crée une légende complète incluant features et sites de restriction
+#' MODIFIÉ: Ajoute le tri par position croissante
 #' @param features_lines Lignes des features GenBank
 #' @param restriction_sites_list Liste des sites de restriction (optionnel)
 #' @return HTML formaté pour la légende complète
@@ -680,7 +708,9 @@ generate_color_legend <- function(features_lines, restriction_sites_list = NULL)
   features_list <- parse_genbank_features(features_lines)
   legend_items <- character()
 
-  # Légende des features
+  # NOUVEAU: Préparer les données pour le tri par position
+  features_for_sorting <- list()
+
   for (feature in features_list) {
     position_string <- feature$position_raw
     if (is.na(position_string)) next
@@ -695,16 +725,34 @@ generate_color_legend <- function(features_lines, restriction_sites_list = NULL)
       color_to_use <- get_color_by_feature_name(feature$name)
     }
 
-    legend_items <- c(legend_items,
-                      paste0("<div style='margin-bottom: 5px;'><span style='color:", color_to_use,
-                             "; font-weight: bold; font-size: 16px;'>■</span> ",
-                             "<span style='font-size: 12px;'>", display_name, " (",
-                             position_bounds[1], "-", position_bounds[2], ")</span></div>"))
+    # NOUVEAU: Stocker avec position de début pour le tri
+    features_for_sorting[[length(features_for_sorting) + 1]] <- list(
+      start_pos = position_bounds[1],
+      end_pos = position_bounds[2],
+      display_name = display_name,
+      color = color_to_use
+    )
+  }
+
+  # NOUVEAU: Trier par position de début croissante
+  if (length(features_for_sorting) > 0) {
+    features_for_sorting <- features_for_sorting[order(sapply(features_for_sorting, function(x) x$start_pos))]
+
+    # Créer les éléments de légende dans l'ordre trié
+    for (feature_data in features_for_sorting) {
+      legend_items <- c(legend_items,
+                        paste0("<div style='margin-bottom: 5px;'><span style='color:", feature_data$color,
+                               "; font-weight: bold; font-size: 16px;'>■ </span> ",
+                               "<span style='font-size: 12px;'>", feature_data$display_name, " (",
+                               feature_data$start_pos, "-", feature_data$end_pos, ")</span></div>"))
+    }
   }
 
   # Construction de la légende des features
   legend_content <- if (length(legend_items) > 0) {
     paste0("<h4 style='margin-top: 0; color: #b22222;'>Légende des couleurs</h4>",
+           "<div style='font-size: 11px; color: #6c757d; margin-bottom: 10px; font-style: italic;'>",
+           "(Features triées par position croissante)</div>",
            paste(legend_items, collapse = ""))
   } else {
     "<h4 style='margin-top: 0; color: #b22222;'>Aucune annotation trouvée</h4>"
@@ -720,10 +768,11 @@ generate_color_legend <- function(features_lines, restriction_sites_list = NULL)
 }
 
 # ==============================================================================
-# FONCTIONS POUR OUVRIR LES FICHIERS AB1
+# FONCTIONS POUR OUVRIR LES FICHIERS AB1 - Gestion des chromatogrammes
 # ==============================================================================
 
 #' Ouverture d'un fichier avec l'application par défaut du système
+#' Utilise les commandes système appropriées selon l'OS
 #' @param file_path Chemin complet vers le fichier à ouvrir
 #' @return TRUE si succès, FALSE sinon
 open_file_with_default_app <- function(file_path) {
@@ -733,13 +782,13 @@ open_file_with_default_app <- function(file_path) {
 
   tryCatch({
     if (.Platform$OS.type == "windows") {
-      # Windows
+      # Windows : utiliser shell.exec
       shell.exec(file_path)
     } else if (Sys.info()["sysname"] == "Darwin") {
-      # macOS
+      # macOS : utiliser open
       system(paste("open", shQuote(file_path)))
     } else {
-      # Linux
+      # Linux : utiliser xdg-open
       system(paste("xdg-open", shQuote(file_path)))
     }
     return(TRUE)
@@ -749,21 +798,22 @@ open_file_with_default_app <- function(file_path) {
 }
 
 #' Recherche des fichiers AB1 correspondants aux fichiers .seq
+#' Trouve automatiquement les chromatogrammes associés aux séquences
 #' @param seq_files_paths Vecteur des chemins des fichiers .seq
 #' @return Liste des informations sur les fichiers AB1
 find_corresponding_ab1_files <- function(seq_files_paths) {
   ab1_info <- list()
 
   for (seq_file in seq_files_paths) {
-    # ✅ NOUVEAU : Vérifier que le fichier .seq ne commence pas par ~
+    # Ignorer les fichiers temporaires (commençant par ~)
     if (grepl("^~", basename(seq_file))) {
-      next  # Ignorer les fichiers temporaires
+      next
     }
 
-    # Convertir .seq en .ab1
+    # Convertir .seq en .ab1 (même nom, extension différente)
     ab1_file <- gsub("\\.seq$", ".ab1", seq_file, ignore.case = TRUE)
 
-    # Vérifier si le fichier AB1 existe ET ne commence pas par ~
+    # Vérifier si le fichier AB1 existe et n'est pas un fichier temporaire
     if (file.exists(ab1_file) && !grepl("^~", basename(ab1_file))) {
       ab1_info[[length(ab1_info) + 1]] <- list(
         seq_file = seq_file,
@@ -772,7 +822,7 @@ find_corresponding_ab1_files <- function(seq_files_paths) {
         size = file.info(ab1_file)$size
       )
     } else {
-      # Essayer avec une casse différente
+      # Essayer avec une casse différente (.AB1)
       ab1_file_upper <- gsub("\\.seq$", ".AB1", seq_file, ignore.case = TRUE)
       if (file.exists(ab1_file_upper) && !grepl("^~", basename(ab1_file_upper))) {
         ab1_info[[length(ab1_info) + 1]] <- list(
@@ -797,10 +847,11 @@ find_corresponding_ab1_files <- function(seq_files_paths) {
 }
 
 # ==============================================================================
-# GÉNÉRATION DES ALIGNEMENTS HTML
+# GÉNÉRATION DES ALIGNEMENTS HTML - Affichage coloré
 # ==============================================================================
 
 #' Génération d'un alignement coloré au format HTML et texte
+#' Crée un alignement visuellement riche avec couleurs et annotations
 #' @param pattern_seq Séquence pattern complète
 #' @param subject_seq Séquence sujet complète
 #' @param annotation_seq Annotation d'alignement complète
@@ -808,35 +859,33 @@ find_corresponding_ab1_files <- function(seq_files_paths) {
 #' @param colors Vecteur de couleurs pour chaque position
 #' @param filename Nom du fichier pour l'en-tête
 #' @param restriction_positions Positions des sites de restriction (optionnel)
+#' @param display_start_offset Offset pour l'affichage des positions
+#' @param fragment_type Type de fragment (5p, int, 3p)
 #' @return Liste avec versions HTML et texte de l'alignement
 generate_colored_alignment <- function(pattern_seq, subject_seq, annotation_seq, start_position,
                                        colors, filename, restriction_positions = NULL,
                                        display_start_offset = 1, fragment_type = NULL) {
   line_length <- CONFIG_DEFAULTS$line_length
-
-  # ✅ CORRECTION : Utiliser directement les séquences alignées telles qu'elles sont
-  # Ne PAS essayer de les "étendre" à la séquence complète
-  sequence_length <- nchar(subject_seq)  # Longueur de l'alignement, pas de la séquence complète
+  sequence_length <- nchar(subject_seq)
 
   html_lines <- character()
   text_lines <- character()
 
-  # En-têtes
+  # En-têtes de section
   html_lines <- c(html_lines, "<div class='alignment-block'>")
   html_lines <- c(html_lines, paste0("<div class='alignment-title'>Alignement avec ", filename, "</div>"))
   text_lines <- c(text_lines, paste0("=== Alignement avec ", filename, " ==="))
 
-  # Génération par blocs de 60 caractères
+  # Génération par blocs de longueur fixe (60 caractères par défaut)
   for (start in seq(1, sequence_length, by = line_length)) {
     end <- min(start + line_length - 1, sequence_length)
 
-    # Extraction des segments DIRECTEMENT des séquences alignées
+    # Extraction des segments
     subject_segment <- substr(subject_seq, start, end)
     pattern_segment <- substr(pattern_seq, start, end)
     annotation_segment <- substr(annotation_seq, start, end)
 
-    # ✅ CORRECTION : Calcul correct des positions pour l'affichage
-    # Pour le subject (référence) : compter seulement les nucleotides non-gap
+    # Calcul des positions pour l'affichage (en excluant les gaps)
     subject_before_segment <- substr(subject_seq, 1, start - 1)
     subject_bases_before <- nchar(gsub("-", "", subject_before_segment))
     subject_bases_in_segment <- nchar(gsub("-", "", subject_segment))
@@ -849,7 +898,7 @@ generate_colored_alignment <- function(pattern_seq, subject_seq, annotation_seq,
       subject_end <- display_start_offset + subject_bases_before + subject_bases_in_segment - 1
     }
 
-    # Pour le pattern : compter seulement les nucleotides non-gap
+    # Positions pour le pattern
     pattern_before_segment <- substr(pattern_seq, 1, start - 1)
     pattern_bases_before <- nchar(gsub("-", "", pattern_before_segment))
     pattern_bases_in_segment <- nchar(gsub("-", "", pattern_segment))
@@ -862,7 +911,7 @@ generate_colored_alignment <- function(pattern_seq, subject_seq, annotation_seq,
       pattern_end <- pattern_bases_before + pattern_bases_in_segment
     }
 
-    # ✅ UTILISER TOUJOURS les couleurs et restrictions
+    # Récupération des couleurs et restrictions pour ce segment
     segment_colors <- if (!is.null(colors) && start <= length(colors)) {
       colors[start:min(end, length(colors))]
     } else {
@@ -875,7 +924,7 @@ generate_colored_alignment <- function(pattern_seq, subject_seq, annotation_seq,
       NULL
     }
 
-    # Création du tableau d'alignement
+    # Création du tableau d'alignement pour ce segment
     alignment_table <- create_colored_alignment_table(
       subject_segment, pattern_segment, annotation_segment,
       subject_start, subject_end, pattern_start, pattern_end,
@@ -884,7 +933,7 @@ generate_colored_alignment <- function(pattern_seq, subject_seq, annotation_seq,
 
     html_lines <- c(html_lines, alignment_table)
 
-    # Version texte
+    # Version texte (sans couleurs)
     subject_label <- "Carte"
     pattern_label <- if (!is.null(fragment_type)) fragment_type else "Seq"
 
@@ -902,8 +951,8 @@ generate_colored_alignment <- function(pattern_seq, subject_seq, annotation_seq,
   ))
 }
 
-
 #' Création d'un tableau HTML coloré pour un segment d'alignement
+#' Génère un tableau HTML avec couleurs, tooltips et annotations
 #' @param subject_segment Segment de la séquence sujet
 #' @param pattern_segment Segment de la séquence pattern
 #' @param annotation_segment Segment d'annotation
@@ -913,25 +962,28 @@ generate_colored_alignment <- function(pattern_seq, subject_seq, annotation_seq,
 #' @param pattern_end Position de fin du pattern
 #' @param segment_colors Couleurs pour ce segment
 #' @param restriction_positions Positions des restrictions pour ce segment
+#' @param display_start_offset Offset d'affichage
+#' @param segment_start_in_display Position de début du segment
+#' @param fragment_type Type de fragment
 #' @return HTML du tableau formaté
 create_colored_alignment_table <- function(subject_segment, pattern_segment, annotation_segment,
                                            subject_start, subject_end, pattern_start, pattern_end,
                                            segment_colors, restriction_positions = NULL,
                                            display_start_offset = 1, segment_start_in_display = 1,
                                            fragment_type = NULL) {
-  # Décomposition en caractères
+  # Décomposition en caractères individuels
   subject_chars <- strsplit(subject_segment, "")[[1]]
   pattern_chars <- strsplit(pattern_segment, "")[[1]]
   annotation_chars <- strsplit(annotation_segment, "")[[1]]
 
-  # Styles de base
+  # Styles CSS de base
   base_cell_style <- CSS_STYLES$base_cell
   prefix_label_style <- CSS_STYLES$prefix_label
   prefix_number_style <- CSS_STYLES$prefix_number
   suffix_style <- CSS_STYLES$suffix
   table_style <- CSS_STYLES$table
 
-  # Création des cellules
+  # Création des cellules avec couleurs et tooltips
   subject_cells <- create_colored_sequence_cells(subject_chars, segment_colors, base_cell_style,
                                                  restriction_positions, display_start_offset,
                                                  segment_start_in_display, "subject",
@@ -942,15 +994,14 @@ create_colored_alignment_table <- function(subject_segment, pattern_segment, ann
                                                  segment_start_in_display, "pattern",
                                                  annotation_chars, subject_chars)
 
-  # IMPORTANT : L'annotation utilise create_sequence_cells avec type "annotation"
+  # Cellules d'annotation avec surlignage des mutations
   annotation_cells <- create_sequence_cells(annotation_chars, base_cell_style, 1, "annotation")
 
-
-  # Déterminer les labels
+  # Déterminer les labels des séquences
   subject_label <- "Carte"
   pattern_label <- if (!is.null(fragment_type)) fragment_type else "Seq"
 
-  # SOLUTION : Utiliser deux colonnes séparées pour le label et le chiffre
+  # Construction du tableau HTML avec colonnes séparées pour labels et numéros
   table_html <- paste0(
     '<table style="', table_style, '">',
     "<tr>",
@@ -977,7 +1028,8 @@ create_colored_alignment_table <- function(subject_segment, pattern_segment, ann
   return(table_html)
 }
 
-#' Création des cellules colorées avec tooltips pour la séquence sujet
+#' Création des cellules colorées avec tooltips pour les séquences
+#' Génère des cellules HTML avec couleurs, tooltips et gestion des mutations
 #' @param sequence_chars Caractères de la séquence
 #' @param colors Couleurs à appliquer
 #' @param base_style Style CSS de base
@@ -985,7 +1037,8 @@ create_colored_alignment_table <- function(subject_segment, pattern_segment, ann
 #' @param display_start_offset Offset pour les positions absolues
 #' @param segment_start_in_display Position de début du segment
 #' @param sequence_type Type de séquence ("subject" ou "pattern")
-#' @param annotation_chars Caractères d'annotation pour détecter les mutations (NOUVEAU)
+#' @param annotation_chars Caractères d'annotation pour détecter les mutations
+#' @param other_sequence_chars Caractères de l'autre séquence pour comparaison
 #' @return Vecteur de cellules HTML formatées
 create_colored_sequence_cells <- function(sequence_chars, colors, base_style, restriction_positions = NULL,
                                           display_start_offset = 1, segment_start_in_display = 1,
@@ -996,20 +1049,20 @@ create_colored_sequence_cells <- function(sequence_chars, colors, base_style, re
   for (i in seq_along(sequence_chars)) {
     style <- paste0(base_style, " position: relative; cursor: pointer;")
 
-    # Calcul de la position absolue
+    # Calcul de la position absolue dans la séquence
     real_position_absolute <- (display_start_offset - 1) + segment_start_in_display + i - 1
 
-    # Application des couleurs GenBank SEULEMENT pour la carte (subject)
+    # Application des couleurs GenBank (seulement pour la séquence de référence)
     if (sequence_type == "subject" && !is.null(colors) && i <= length(colors) && !is.na(colors[i])) {
       style <- paste0(style, " color: ", colors[i], "; font-weight: bold;")
     }
 
-    # Sites de restriction (fond gris)
+    # Surlignage des sites de restriction (fond gris)
     if (!is.null(restriction_positions) && i <= length(restriction_positions) && restriction_positions[i]) {
       style <- paste0(style, " background-color: #D3D3D3; border: 1px solid #999; border-radius: 2px;")
     }
 
-    # Tooltip simple
+    # Création du tooltip informatif
     tooltip_text <- paste0("Position: ", real_position_absolute, " | Nucléotide: ", sequence_chars[i])
     if (sequence_type == "pattern") {
       tooltip_text <- paste0(tooltip_text, " (Séquence test)")
@@ -1025,25 +1078,22 @@ create_colored_sequence_cells <- function(sequence_chars, colors, base_style, re
   return(cells)
 }
 
-
-
-
-#' créer les cellules d'annotation
-# ==============================================================================
-# CORRECTION SIMPLE dans global_clonage.R
-# Modifier SEULEMENT la fonction create_sequence_cells
-# ==============================================================================
-
+#' Création des cellules de séquence standards
+#' Version simplifiée pour les séquences sans couleurs spéciales
+#' @param sequence_chars Caractères de la séquence
+#' @param base_style Style CSS de base
+#' @param start_position Position de début (défaut: 1)
+#' @param sequence_type Type de séquence
+#' @return Vecteur de cellules HTML
 create_sequence_cells <- function(sequence_chars, base_style, start_position = 1, sequence_type = "pattern") {
   cells <- character()
 
-  # CORRECTION : Si c'est une annotation, surligner SEULEMENT quand pas de '|'
+  # Traitement spécial pour les annotations (surlignage des mutations)
   if (sequence_type == "annotation") {
-
     for (i in seq_along(sequence_chars)) {
       style <- paste0(base_style, " position: relative; cursor: pointer;")
 
-      # RÈGLE SIMPLE : Fond rouge si le caractère n'est PAS '|'
+      # Fond rouge si le caractère n'est PAS '|' (donc c'est une différence)
       if (sequence_chars[i] != "|") {
         style <- paste0(style, " background-color: #ffcccc; border: 1px solid #ff9999; border-radius: 2px;")
       }
@@ -1054,7 +1104,7 @@ create_sequence_cells <- function(sequence_chars, base_style, start_position = 1
     return(cells)
   }
 
-  # Pour les séquences pattern normales (sans modification)
+  # Pour les séquences pattern normales
   for (i in seq_along(sequence_chars)) {
     style <- paste0(base_style, " position: relative; cursor: pointer;")
 
@@ -1077,6 +1127,7 @@ create_sequence_cells <- function(sequence_chars, base_style, start_position = 1
         }
       }
 
+      # Création du tooltip
       if (is.na(real_position) || sequence_chars[i] == "-") {
         tooltip_text <- "Gap (insertion dans la référence)"
       } else {
@@ -1086,7 +1137,7 @@ create_sequence_cells <- function(sequence_chars, base_style, start_position = 1
       tooltip_text <- ""
     }
 
-    # Création du tooltip si nécessaire
+    # Ajout du tooltip si nécessaire
     tooltip_html <- if (tooltip_text != "" && sequence_chars[i] != " ") {
       paste0('<span class="tooltip">', tooltip_text, '</span>')
     } else {
@@ -1102,10 +1153,11 @@ create_sequence_cells <- function(sequence_chars, base_style, start_position = 1
 }
 
 # ==============================================================================
-# Gestion des groupes de clones
+# GESTION DES GROUPES DE CLONES - Organisation par familles
 # ==============================================================================
 
-#' Extraction du groupe de clone par avant-dernier et dernier underscore
+#' Extraction du groupe de clone par analyse du nom de fichier
+#' Parse la structure des noms pour identifier les groupes de clones apparentés
 #' @param filename Nom du fichier .seq
 #' @return Liste avec prefix, group et full_group
 extract_clone_group <- function(filename) {
@@ -1116,7 +1168,7 @@ extract_clone_group <- function(filename) {
   parts <- strsplit(base_name, "_")[[1]]
 
   if (length(parts) >= 2) {
-    # Ce qu'il y a entre l'avant-dernier et le dernier underscore
+    # Ce qui se trouve entre l'avant-dernier et le dernier underscore
     clone_id <- parts[length(parts) - 1]  # Avant-dernier élément
 
     # Utiliser le clone_id comme groupe
@@ -1144,7 +1196,8 @@ extract_clone_group <- function(filename) {
   }
 }
 
-#' Organisation des fichiers par groupes
+#' Organisation des fichiers par groupes de clones
+#' Regroupe les fichiers selon leur appartenance à un même clone
 #' @param file_paths Vecteur des chemins complets des fichiers
 #' @param file_names Vecteur des noms d'affichage
 #' @return Liste organisée par groupes
@@ -1161,7 +1214,7 @@ organize_files_by_groups <- function(file_paths, file_names) {
 
     # Extraire le groupe
     clone_info <- extract_clone_group(file_path)
-    group_key <- clone_info$group  # Ce sera "A-1", "A-2", etc.
+    group_key <- clone_info$group  # Ex: "A-1", "A-2", etc.
 
     if (is.null(groups[[group_key]])) {
       groups[[group_key]] <- list(
@@ -1179,13 +1232,10 @@ organize_files_by_groups <- function(file_paths, file_names) {
   return(groups)
 }
 
-# ==============================================================================
-# EXTRACTION DU NOM DU PUIT
-# ==============================================================================
-
-#' Version alternative : Groupe + Puit
+#' Extraction du nom du puit avec groupement
+#' Version alternative qui combine groupe et position de puit
 #' @param file_name Nom complet du fichier
-#' @return Groupe_Puit
+#' @return Identifiant Groupe_Puit
 extract_group_and_well <- function(file_name) {
   # Enlever l'extension
   base_name <- gsub("\\.(seq|ab1)$", "", file_name, ignore.case = TRUE)
@@ -1193,23 +1243,24 @@ extract_group_and_well <- function(file_name) {
   # Séparer par underscore
   parts <- strsplit(base_name, "_")[[1]]
 
-  # Prendre simplement les parties 3 et 7 (B09 et A-1)
+  # Prendre les parties 3 et 7 (position puit et groupe)
   if (length(parts) >= 7) {
-    well <- parts[3]   # B09
-    group <- parts[7]  # A-1
+    well <- parts[3]   # Ex: B09
+    group <- parts[7]  # Ex: A-1
     return(paste0(group, "_", well))
   } else if (length(parts) >= 3) {
     return(parts[3])  # Juste le puit
   } else {
-    return(substr(base_name, 1, 15))
+    return(substr(base_name, 1, 15))  # Nom tronqué
   }
 }
 
 # ==============================================================================
-# VISUALISATION GLOBALE DES ALIGNEMENTS AVEC RECTANGLES
+# VISUALISATION GLOBALE DES ALIGNEMENTS - Vue d'ensemble SVG
 # ==============================================================================
 
 #' Génération de la visualisation globale des alignements
+#' Crée une vue SVG montrant la position de tous les alignements sur la séquence
 #' @param sequence_length Longueur de la séquence de référence
 #' @param features_lines Lignes des features GenBank
 #' @param restriction_sites_list Liste des sites de restriction
@@ -1217,8 +1268,7 @@ extract_group_and_well <- function(file_name) {
 #' @param selected_files Noms des fichiers sélectionnés
 #' @return HTML de la visualisation globale
 generate_alignment_overview <- function(sequence_length, features_lines, restriction_sites_list, alignments_info, selected_files) {
-
-  # DIMENSIONS FIXES EN PIXELS
+  # Dimensions fixes en pixels pour le SVG
   viz_width <- CONFIG_DEFAULTS$svg_width
   viz_height <- 50 + (length(alignments_info) * 25) + 100
 
@@ -1227,17 +1277,17 @@ generate_alignment_overview <- function(sequence_length, features_lines, restric
     '<h4 style="color: #b22222; margin-top: 0;">📊 Vue d\'ensemble des alignements</h4>',
     '<svg width="', viz_width, '" height="', viz_height, '" style="background: white; border: 1px solid #ccc; min-width: 800px;">',
 
-    # Ligne de référence (séquence complète) - COORDONNÉES FIXES
+    # Ligne de référence (séquence complète)
     '<rect x="80" y="20" width="', (viz_width - 160), '" height="8" fill="#e9ecef" stroke="#adb5bd" stroke-width="1"/>',
     '<text x="75" y="32" font-family="Arial" font-size="12" text-anchor="end" fill="#495057">Référence</text>',
 
-    # Génération des éléments avec coordonnées fixes
+    # Génération des éléments graphiques
     generate_scale_ruler_fixed(viz_width, sequence_length),
     generate_features_rectangles_fixed(features_lines, viz_width, sequence_length),
     generate_restriction_sites_viz_fixed(restriction_sites_list, viz_width, sequence_length)
   )
 
-  # Alignements individuels
+  # Alignements individuels sous forme de rectangles colorés
   for (i in seq_along(alignments_info)) {
     alignment <- alignments_info[[i]]
     file_name <- if (i <= length(selected_files)) basename(selected_files[i]) else paste0("Clone_", i)
@@ -1249,7 +1299,8 @@ generate_alignment_overview <- function(sequence_length, features_lines, restric
   return(svg_content)
 }
 
-#' Génération de la règle graduée (VERSION FIXE)
+#' Génération de la règle graduée pour le SVG
+#' Ajoute une échelle avec graduations pour la position
 #' @param viz_width Largeur de la visualisation
 #' @param sequence_length Longueur de la séquence
 #' @return HTML SVG de la règle
@@ -1268,7 +1319,8 @@ generate_scale_ruler_fixed <- function(viz_width, sequence_length) {
   return(ruler_html)
 }
 
-#' Calcul du pas de graduation optimal
+#' Calcul du pas de graduation optimal selon la longueur
+#' Détermine l'espacement idéal des graduations
 #' @param sequence_length Longueur de la séquence
 #' @return Pas de graduation
 calculate_ruler_step <- function(sequence_length) {
@@ -1279,7 +1331,8 @@ calculate_ruler_step <- function(sequence_length) {
   return(10000)
 }
 
-#' Génération des rectangles pour les features GenBank (VERSION FIXE)
+#' Génération des rectangles pour les features GenBank dans le SVG
+#' Affiche les annotations GenBank sous forme de rectangles colorés
 #' @param features_lines Lignes des features
 #' @param viz_width Largeur de la visualisation
 #' @param sequence_length Longueur de la séquence
@@ -1299,10 +1352,11 @@ generate_features_rectangles_fixed <- function(features_lines, viz_width, sequen
     start_pos <- position_bounds[1]
     end_pos <- position_bounds[2]
 
-    # COORDONNÉES FIXES
+    # Calcul des coordonnées SVG
     x_start <- calculate_svg_x_position(start_pos, sequence_length, viz_width)
     x_width <- ((end_pos - start_pos + 1) / sequence_length) * ruler_width
 
+    # Détermination de la couleur
     color <- feature$color
     if (color == "#000000") {
       color <- get_color_by_feature_name(feature$name)
@@ -1310,6 +1364,7 @@ generate_features_rectangles_fixed <- function(features_lines, viz_width, sequen
 
     display_name <- if (feature$name != "") feature$name else paste("Feature", feature$type)
 
+    # Création du rectangle SVG avec tooltip
     features_html <- paste0(features_html,
                             '<rect x="', x_start, '" y="12" width="', max(x_width, 2), '" height="4" fill="', color, '" opacity="0.8">',
                             '<title>', display_name, ' (', start_pos, '-', end_pos, ')</title>',
@@ -1318,7 +1373,8 @@ generate_features_rectangles_fixed <- function(features_lines, viz_width, sequen
   return(features_html)
 }
 
-#' Génération des sites de restriction (VERSION FIXE)
+#' Génération des sites de restriction dans le SVG
+#' Affiche les sites d'enzymes sous forme de lignes verticales colorées
 #' @param restriction_sites_list Liste des sites de restriction
 #' @param viz_width Largeur de la visualisation
 #' @param sequence_length Longueur de la séquence
@@ -1327,7 +1383,7 @@ generate_restriction_sites_viz_fixed <- function(restriction_sites_list, viz_wid
   if (length(restriction_sites_list) == 0) return("")
 
   sites_html <- ""
-  colors <- c("#FF0000", "#0000FF", "#00FF00", "#FF8000", "#8000FF", "#00FFFF")
+  colors <- RESTRICTION_COLORS
   site_index <- 1
   ruler_width <- viz_width - 160
 
@@ -1337,6 +1393,7 @@ generate_restriction_sites_viz_fixed <- function(restriction_sites_list, viz_wid
 
     color <- colors[((site_index - 1) %% length(colors)) + 1]
 
+    # Créer une ligne verticale pour chaque site
     for (site_pos in sites) {
       x_pos <- 80 + (site_pos / sequence_length) * ruler_width
       sites_html <- paste0(sites_html,
@@ -1349,35 +1406,39 @@ generate_restriction_sites_viz_fixed <- function(restriction_sites_list, viz_wid
   return(sites_html)
 }
 
-#' Génération du rectangle d'alignement pour un clone (VERSION FIXE)
+#' Génération du rectangle d'alignement pour un clone dans le SVG
+#' Crée un rectangle coloré représentant l'étendue d'un alignement
 #' @param alignment Information d'alignement
 #' @param file_name Nom du fichier
-#' @param y_position Position Y
+#' @param y_position Position Y dans le SVG
 #' @param viz_width Largeur de la visualisation
 #' @param sequence_length Longueur de la séquence
 #' @param index Index du clone
 #' @return HTML SVG du rectangle d'alignement
 generate_alignment_rectangle_fixed <- function(alignment, file_name, y_position, viz_width, sequence_length, index) {
-
   ruler_width <- viz_width - 160
 
-  # COORDONNÉES FIXES
+  # Calcul des coordonnées
   x_start <- calculate_svg_x_position(alignment$start, sequence_length, viz_width)
   x_width <- ((alignment$end - alignment$start + 1) / sequence_length) * ruler_width
 
+  # Couleur et opacité selon la qualité de l'alignement
   clone_colors <- CLONE_COLORS
   color <- clone_colors[((index - 1) %% length(clone_colors)) + 1]
 
   identity_percent <- round(alignment$identity * 100, 1)
-  opacity <- 0.3 + (alignment$identity * 0.7)
+  opacity <- 0.3 + (alignment$identity * 0.7)  # Plus opaque = meilleur alignement
 
+  # Création du rectangle avec informations
   alignment_html <- paste0(
     '<rect x="', x_start, '" y="', y_position, '" width="', max(x_width, 2), '" height="8" ',
     'fill="', color, '" opacity="', opacity, '" stroke="', color, '" stroke-width="1">',
     '<title>', file_name, ' - ', alignment$start, '-', alignment$end, ' (', identity_percent, '% identité)</title>',
     '</rect>',
+    # Label du clone
     '<text x="75" y="', y_position + 6, '" font-family="Arial" font-size="11" text-anchor="end" fill="#495057">',
     extract_group_and_well(file_name), '</text>',
+    # Pourcentage d'identité
     '<text x="', x_start + x_width + 5, '" y="', y_position + 6, '" font-family="Arial" font-size="10" fill="#6c757d">',
     identity_percent, '%</text>')
 
@@ -1385,6 +1446,7 @@ generate_alignment_rectangle_fixed <- function(alignment, file_name, y_position,
 }
 
 #' Calcul des informations d'alignement pour la visualisation
+#' Analyse les alignements pour extraire les métriques de qualité
 #' @param seqs_list Liste des séquences
 #' @param reference_seq Séquence de référence
 #' @return Liste des informations d'alignement
@@ -1392,7 +1454,7 @@ calculate_alignments_info <- function(seqs_list, reference_seq) {
   alignments_info <- list()
 
   for (i in seq_along(seqs_list)) {
-    # Alignement par paires
+    # Alignement par paires local (Smith-Waterman)
     aln <- Biostrings::pairwiseAlignment(
       pattern = seqs_list[[i]],
       subject = reference_seq,
@@ -1402,11 +1464,11 @@ calculate_alignments_info <- function(seqs_list, reference_seq) {
       gapExtension = -1
     )
 
-    # Extraction des informations
+    # Extraction des métriques
     alignments_info[[i]] <- list(
       start = start(subject(aln)),
       end = end(subject(aln)),
-      identity = pid(aln, type = "PID1") / 100,  # Pourcentage d'identité
+      identity = pid(aln, type = "PID1") / 100,  # Pourcentage d'identité (0-1)
       score = score(aln)
     )
   }
@@ -1415,20 +1477,22 @@ calculate_alignments_info <- function(seqs_list, reference_seq) {
 }
 
 # ==============================================================================
-# FONCTIONS HELPER POUR SVG
+# FONCTIONS HELPER POUR SVG - Utilitaires de positionnement
 # ==============================================================================
 
 #' Calcul de position SVG standardisé
-#' @param position Position dans la séquence
+#' Convertit une position de séquence en coordonnée SVG
+#' @param position Position dans la séquence (1-indexée)
 #' @param sequence_length Longueur totale de la séquence
 #' @param viz_width Largeur du SVG
-#' @return Position X calculée
+#' @return Position X calculée en pixels
 calculate_svg_x_position <- function(position, sequence_length, viz_width = CONFIG_DEFAULTS$svg_width) {
   ruler_width <- viz_width - CONFIG_DEFAULTS$svg_ruler_margin
   return(CONFIG_DEFAULTS$svg_ruler_margin/2 + (position / sequence_length) * ruler_width)
 }
 
 #' Création d'un élément SVG rectangle standardisé
+#' Utilitaire pour créer des rectangles SVG cohérents
 #' @param x Position X
 #' @param y Position Y
 #' @param width Largeur
@@ -1436,16 +1500,16 @@ calculate_svg_x_position <- function(position, sequence_length, viz_width = CONF
 #' @param fill Couleur de remplissage
 #' @param title Titre pour le tooltip
 #' @param opacity Opacité (défaut: 0.8)
-#' @return Code HTML du rectangle
+#' @return Code HTML du rectangle SVG
 create_svg_rect <- function(x, y, width, height, fill, title = "", opacity = 0.8) {
   return(paste0('<rect x="', x, '" y="', y, '" width="', max(width, 2),
                 '" height="', height, '" fill="', fill, '" opacity="', opacity, '">',
                 if(title != "") paste0('<title>', title, '</title>'), '</rect>'))
 }
 
-
-#' Validation et nettoyage d'une séquence personnalisée (oligo, primer, fragment, enzyme)
-#' @param input_sequence Séquence saisie par l'utilisateur
+#' Validation et nettoyage d'une séquence personnalisée
+#' Vérifie qu'une séquence saisie par l'utilisateur est valide
+#' @param input_sequence Séquence saisie par l'utilisateur (oligo, primer, enzyme)
 #' @return Séquence nettoyée et validée, ou NULL si invalide
 validate_enzyme_sequence <- function(input_sequence) {
   if (is.null(input_sequence) || input_sequence == "") {
@@ -1455,12 +1519,12 @@ validate_enzyme_sequence <- function(input_sequence) {
   # Nettoyage : supprimer espaces, retours à la ligne, convertir en majuscules
   cleaned_seq <- toupper(gsub("[^ATCGN]", "", input_sequence))
 
-  # Vérification : au moins 3 caractères, seulement ATCG (N autorisé pour pattern spéciaux)
+  # Vérification : au moins 3 caractères, seulement ATCG (N autorisé pour patterns spéciaux)
   if (nchar(cleaned_seq) < 3) {
     return(NULL)
   }
 
-  # Vérifier que ce sont bien des nucléotides
+  # Vérifier que ce sont bien des nucléotides valides
   if (!grepl("^[ATCGN]+$", cleaned_seq)) {
     return(NULL)
   }
@@ -1469,10 +1533,11 @@ validate_enzyme_sequence <- function(input_sequence) {
 }
 
 # ==============================================================================
-# FONCTIONS DE GESTION DES FRAGMENTS 5p/int/3p
+# FONCTIONS DE GESTION DES FRAGMENTS - Classification des types de séquences
 # ==============================================================================
 
 #' Extraction du type de fragment depuis le nom de fichier
+#' Analyse la nomenclature pour identifier le type de fragment (5', interne, 3')
 #' @param filename Nom du fichier
 #' @return Type de fragment (5p, int1, int2, 3p, etc.) ou NULL
 extract_fragment_type <- function(filename) {
@@ -1487,23 +1552,18 @@ extract_fragment_type <- function(filename) {
     return(NULL)
   }
 
-  # Prendre le 5ème élément (entre 4ème et 5ème underscore)
+  # Prendre le 5ème élément (convention de nommage)
   fragment_part <- parts[5]
 
-  #cat("DEBUG extract_fragment_type - filename:", filename, "fragment_part:", fragment_part, "\n")
-
-  # Extraire le type de fragment avec regex (chercher B5p, B3p, BI1, BI2, etc.)
-  # Peut être dans des formes comme: B5p, vectorB5p, B5pvector, etc.
+  # Extraire le type de fragment avec regex
   if (grepl("B5p", fragment_part, ignore.case = TRUE)) {
     return("5p")
   } else if (grepl("B3p", fragment_part, ignore.case = TRUE)) {
     return("3p")
   } else if (grepl("BI\\d+", fragment_part, ignore.case = TRUE)) {
     # Extraire le numéro d'int si présent (BI1, BI2, etc.)
-    # Peut être dans des formes comme: BI1, vectorBI2, BI3promoter, etc.
     int_match <- regexpr("BI(\\d+)", fragment_part, ignore.case = TRUE)
     if (int_match > 0) {
-      # Extraire juste le numéro après BI
       full_match <- regmatches(fragment_part, int_match)
       number <- gsub("BI", "", full_match, ignore.case = TRUE)
       return(paste0("int", number))
@@ -1523,10 +1583,11 @@ extract_fragment_type <- function(filename) {
 }
 
 #' Tri des fragments dans l'ordre correct
+#' Ordonne les fragments selon la logique biologique (5' → internes → 3')
 #' @param fragments_list Liste des fragments avec leurs types
 #' @return Liste triée dans l'ordre 5p → int1 → int2 → ... → 3p
 sort_fragments_by_type <- function(fragments_list) {
-  # Définir l'ordre de priorité
+  # Définir l'ordre de priorité biologique
   type_order <- c("5p", "int", "int1", "int2", "int3", "int4", "int5", "3p")
 
   # Trier selon cet ordre
@@ -1535,23 +1596,18 @@ sort_fragments_by_type <- function(fragments_list) {
   return(sorted_fragments)
 }
 
-#' Organisation des fichiers par CLONE d'abord, puis fragments à l'intérieur
+#' Organisation des fichiers par clones puis fragments
+#' Structure hiérarchique : clone → fragments à l'intérieur
 #' @param file_paths Vecteur des chemins complets des fichiers
 #' @param file_names Vecteur des noms d'affichage
 #' @return Liste organisée par clones, puis fragments à l'intérieur
 organize_files_by_fragments <- function(file_paths, file_names) {
-  cat("=== DEBUG organize_files_by_fragments ===\n")
-  cat("file_paths:", length(file_paths), "\n")
-  cat("file_names:", length(file_names), "\n")
-
   if (length(file_paths) == 0) {
-    cat("Aucun fichier à organiser\n")
     return(list())
   }
 
   # Vérifier que les longueurs correspondent
   if (length(file_paths) != length(file_names)) {
-    cat("ERREUR: longueurs différentes file_paths et file_names\n")
     return(list())
   }
 
@@ -1562,13 +1618,9 @@ organize_files_by_fragments <- function(file_paths, file_names) {
     file_path <- file_paths[i]
     display_name <- file_names[i]
 
-    cat("Traitement fichier:", basename(file_path), "\n")
-
     # Extraire le clone (entre avant-dernier et dernier underscore)
     clone_info <- extract_clone_group(file_path)
     clone_id <- clone_info$group  # A1, A2, etc.
-
-    cat("  Clone ID:", clone_id, "\n")
 
     if (is.null(clones_temp[[clone_id]])) {
       clones_temp[[clone_id]] <- list(
@@ -1586,22 +1638,16 @@ organize_files_by_fragments <- function(file_paths, file_names) {
       fragment_type <- "unknown"
     }
 
-    cat("  Fragment type:", fragment_type, "\n")
-
     clones_temp[[clone_id]]$files <- c(clones_temp[[clone_id]]$files, basename(file_path))
     clones_temp[[clone_id]]$paths <- c(clones_temp[[clone_id]]$paths, file_path)
     clones_temp[[clone_id]]$display_names <- c(clones_temp[[clone_id]]$display_names, display_name)
     clones_temp[[clone_id]]$fragment_types <- c(clones_temp[[clone_id]]$fragment_types, fragment_type)
   }
 
-  cat("Clones temporaires créés:", length(clones_temp), "\n")
-
   # Étape 2 : À l'intérieur de chaque clone, organiser par fragments
   clones_final <- list()
 
   for (clone_id in names(clones_temp)) {
-    cat("Traitement clone:", clone_id, "\n")
-
     clone_data <- clones_temp[[clone_id]]
 
     # Regrouper les fichiers de ce clone par fragment
@@ -1624,8 +1670,6 @@ organize_files_by_fragments <- function(file_paths, file_names) {
       fragments_in_clone[[fragment_type]]$display_names <- c(fragments_in_clone[[fragment_type]]$display_names, clone_data$display_names[i])
     }
 
-    cat("  Fragments dans ce clone:", length(fragments_in_clone), "\n")
-
     # Trier les fragments dans l'ordre correct (5p → int → 3p)
     type_order <- c("5p", "int", "int1", "int2", "int3", "int4", "int5", "3p", "unknown")
     fragment_types_found <- names(fragments_in_clone)
@@ -1646,8 +1690,6 @@ organize_files_by_fragments <- function(file_paths, file_names) {
     )
   }
 
-  cat("Clones finaux créés:", length(clones_final), "\n")
-
   # Étape 3 : Trier les clones par nom (A1, A2, etc.)
   if (length(clones_final) > 0) {
     sorted_clones <- clones_final[order(names(clones_final))]
@@ -1655,12 +1697,11 @@ organize_files_by_fragments <- function(file_paths, file_names) {
     sorted_clones <- list()
   }
 
-  cat("=== FIN DEBUG organize ===\n")
-
   return(sorted_clones)
 }
 
 #' Calcul du reverse complément d'une séquence
+#' Génère le brin complémentaire antiparallèle
 #' @param sequence Séquence ADN (DNAString ou character)
 #' @return Séquence reverse complément
 reverse_complement <- function(sequence) {
@@ -1674,6 +1715,7 @@ reverse_complement <- function(sequence) {
 }
 
 #' Calcul de la région d'affichage pour les fragments avec contexte spécifique
+#' Détermine quelle zone afficher selon le type de fragment et les enzymes
 #' @param fragment_type Type de fragment (5p, int, 3p)
 #' @param sequence_length Longueur de la séquence
 #' @param enzyme1_sites Sites de l'enzyme 1
@@ -1707,11 +1749,7 @@ calculate_fragment_display_region <- function(fragment_type, sequence_length, en
     }
 
   } else {
-    # Pour int : 200nt avant le début jusqu'à 200nt après la fin
-    start_pos <- max(1, 1 - context_length)
-    end_pos <- min(sequence_length, sequence_length + context_length)
-
-    # En pratique, pour int, on affiche souvent toute la séquence
+    # Pour int : afficher toute la séquence (ou avec contexte minimal)
     start_pos <- 1
     end_pos <- sequence_length
   }
@@ -1720,6 +1758,7 @@ calculate_fragment_display_region <- function(fragment_type, sequence_length, en
 }
 
 #' Détermination des enzymes à chercher selon le type de fragment
+#' Logique métier : les fragments 5p contiennent enzyme1, les 3p contiennent enzyme2
 #' @param fragment_type Type de fragment
 #' @param enzyme1_seq Séquence enzyme 1
 #' @param enzyme2_seq Séquence enzyme 2
@@ -1735,45 +1774,7 @@ get_enzymes_for_fragment <- function(fragment_type, enzyme1_seq, enzyme2_seq) {
     enzymes_to_search$enzyme2 <- enzyme2_seq
   }
 
-  # Les fragments int n'ont généralement pas d'enzymes spécifiques
-  # mais on peut les chercher si nécessaire
+  # Les fragments int peuvent contenir les deux ou aucun selon le protocole
 
   return(enzymes_to_search)
 }
-
-
-debug_paths <- function() {
-  cat("🔍 DEBUG CHEMINS CARTE_NOUVEAUX_CLONAGES\n")
-  cat("══════════════════════════════════════════\n")
-
-  # Vérifications Windows
-  windows_path <- "R:/Production/Labo YEAST/Demandes du service/carte_nouveaux_clonages"
-  cat("Windows path exists:", dir.exists(windows_path), "\n")
-
-  # Vérifications Linux
-  linux_path <- "/mnt/carte_nouveaux_clonages"
-  cat("Linux mount exists:", dir.exists(linux_path), "\n")
-
-  # Vérifications montage
-  cat("Mount point /mnt exists:", dir.exists("/mnt"), "\n")
-
-  # Lister contenu si accessible
-  if (dir.exists(linux_path)) {
-    files <- list.files(linux_path, pattern = "\\.gb$")
-    cat("Files in mount:", length(files), "\n")
-    if (length(files) > 0) {
-      cat("Examples:", paste(head(files, 3), collapse = ", "), "\n")
-    }
-  }
-
-  if (dir.exists(windows_path)) {
-    files <- list.files(windows_path, pattern = "\\.gb$")
-    cat("Files in Windows:", length(files), "\n")
-    if (length(files) > 0) {
-      cat("Examples:", paste(head(files, 3), collapse = ", "), "\n")
-    }
-  }
-
-  cat("══════════════════════════════════════════\n")
-}
-
