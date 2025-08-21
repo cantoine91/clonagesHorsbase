@@ -36,6 +36,11 @@ server_clonage <- function(input, output, session) {
     status_message = "Prêt"
   )
 
+  reorder_data <- reactiveValues(
+    sequences = list(),
+    custom_order_applied = FALSE
+  )
+
   # ==============================================================================
   # CONFIGURATION DES CHEMINS
   # ==============================================================================
@@ -502,6 +507,191 @@ server_clonage <- function(input, output, session) {
     }
   })
 
+  # Observer pour initialiser les données de réorganisation
+  observeEvent(get_all_selected_files(), {
+    selected_files <- get_all_selected_files()
+
+    if (length(selected_files) > 0) {
+      # Créer la liste des séquences avec métadonnées
+      sequences_list <- list()
+
+      for (i in seq_along(selected_files)) {
+        file_path <- selected_files[i]
+        file_name <- basename(file_path)
+        fragment_type <- extract_fragment_type(file_path)
+
+        sequences_list[[i]] <- list(
+          index = i,
+          original_index = i,
+          file_path = file_path,
+          file_name = file_name,
+          display_name = file_name,
+          fragment_type = if(is.null(fragment_type)) "unknown" else fragment_type,
+          reverse_complement = if(fragment_type == "3p") TRUE else FALSE,  # 3p en RC par défaut
+          enabled = TRUE
+        )
+      }
+
+      reorder_data$sequences <- sequences_list
+      reorder_data$custom_order_applied <- FALSE
+    }
+  }, ignoreInit = TRUE)
+
+  # Interface de réorganisation
+  output$sequence_reorder_ui <- renderUI({
+    req(reorder_data$sequences)
+
+    sequences <- reorder_data$sequences
+
+    if (length(sequences) == 0) {
+      return(div("Aucune séquence sélectionnée"))
+    }
+
+    sequence_controls <- list()
+
+    for (i in seq_along(sequences)) {
+      seq_data <- sequences[[i]]
+
+      # Couleur selon le type
+      bg_color <- switch(seq_data$fragment_type,
+                         "5p" = "#e8f5e8",
+                         "3p" = "#ffe8e8",
+                         "int" = "#e8f0ff",
+                         "int1" = "#e8f0ff",
+                         "int2" = "#e8f0ff",
+                         "#f8f9fa")
+
+      # Icône selon le type
+      icon <- switch(seq_data$fragment_type,
+                     "5p" = "🔹",
+                     "3p" = "🔸",
+                     "int" = "🔻",
+                     "int1" = "🔻",
+                     "int2" = "🔻",
+                     "🧬")
+
+      sequence_controls[[i]] <- div(
+        style = paste0("margin-bottom: 8px; padding: 10px; background: ", bg_color,
+                       "; border: 1px solid #dee2e6; border-radius: 4px;"),
+
+        fluidRow(
+          # Position
+          column(1,
+                 div(style = "text-align: center; font-weight: bold; font-size: 16px; color: #495057;",
+                     i)
+          ),
+
+          # Boutons de déplacement
+          column(1,
+                 div(style = "text-align: center;",
+                     actionButton(paste0("move_up_", i), "⬆️",
+                                  style = "background: transparent; border: 1px solid #ccc; font-size: 10px; padding: 2px 4px;"),
+                     br(),
+                     actionButton(paste0("move_down_", i), "⬇️",
+                                  style = "background: transparent; border: 1px solid #ccc; font-size: 10px; padding: 2px 4px;")
+                 )
+          ),
+
+          # Infos séquence
+          column(7,
+                 div(
+                   tags$strong(paste0(icon, " ", seq_data$display_name)),
+                   br(),
+                   tags$small(style = "color: #6c757d;",
+                              paste0("Type détecté: ", seq_data$fragment_type))
+                 )
+          ),
+
+          # Reverse complement
+          column(3,
+                 checkboxInput(paste0("reverse_", i),
+                               label = "Reverse Complement",
+                               value = seq_data$reverse_complement)
+          )
+        )
+      )
+    }
+
+    return(div(sequence_controls))
+  })
+
+  # Boutons de réorganisation
+  observeEvent(input$reset_order_btn, {
+    # Remettre l'ordre automatique
+    selected_files <- get_all_selected_files()
+
+    if (length(selected_files) > 0) {
+      sequences_list <- list()
+
+      for (i in seq_along(selected_files)) {
+        file_path <- selected_files[i]
+        file_name <- basename(file_path)
+        fragment_type <- extract_fragment_type(file_path)
+
+        sequences_list[[i]] <- list(
+          index = i,
+          original_index = i,
+          file_path = file_path,
+          file_name = file_name,
+          display_name = file_name,
+          fragment_type = if(is.null(fragment_type)) "unknown" else fragment_type,
+          reverse_complement = if(fragment_type == "3p") TRUE else FALSE,
+          enabled = TRUE
+        )
+      }
+
+      reorder_data$sequences <- sequences_list
+      reorder_data$custom_order_applied <- FALSE
+
+      showNotification("🔄 Ordre automatique restauré", type = "message", duration = 2)
+    }
+  })
+
+  observeEvent(input$apply_changes_btn, {
+    # Marquer comme ordre personnalisé appliqué
+    reorder_data$custom_order_applied <- TRUE
+    showNotification("✅ Modifications appliquées pour l'alignement", type = "message", duration = 3)
+  })
+
+  # Observeurs pour les boutons de déplacement (à générer dynamiquement)
+  observe({
+    req(reorder_data$sequences)
+
+    for (i in seq_along(reorder_data$sequences)) {
+      local({
+        index <- i
+
+        # Bouton monter
+        observeEvent(input[[paste0("move_up_", index)]], {
+          if (index > 1 && length(reorder_data$sequences) >= index) {
+            # Échanger avec l'élément précédent
+            temp <- reorder_data$sequences[[index]]
+            reorder_data$sequences[[index]] <- reorder_data$sequences[[index - 1]]
+            reorder_data$sequences[[index - 1]] <- temp
+
+            # Mettre à jour les index
+            reorder_data$sequences[[index]]$index <- index
+            reorder_data$sequences[[index - 1]]$index <- index - 1
+          }
+        }, ignoreInit = TRUE)
+
+        # Bouton descendre
+        observeEvent(input[[paste0("move_down_", index)]], {
+          if (index < length(reorder_data$sequences)) {
+            # Échanger avec l'élément suivant
+            temp <- reorder_data$sequences[[index]]
+            reorder_data$sequences[[index]] <- reorder_data$sequences[[index + 1]]
+            reorder_data$sequences[[index + 1]] <- temp
+
+            # Mettre à jour les index
+            reorder_data$sequences[[index]]$index <- index
+            reorder_data$sequences[[index + 1]]$index <- index + 1
+          }
+        }, ignoreInit = TRUE)
+      })
+    }
+  })
+
   # ==============================================================================
   # AJOUT DANS SERVER_CLONAGE.R - VALIDATION EN TEMPS RÉEL
   # ==============================================================================
@@ -611,6 +801,53 @@ server_clonage <- function(input, output, session) {
         }
       })
     }
+  })
+
+  # Observer pour synchroniser les checkboxes avec reorder_data
+  observe({
+    req(reorder_data$sequences)
+
+    for (i in seq_along(reorder_data$sequences)) {
+      local({
+        index <- i
+
+        observeEvent(input[[paste0("reverse_", index)]], {
+          if (!is.null(reorder_data$sequences[[index]])) {
+            # Mettre à jour la valeur dans reorder_data
+            reorder_data$sequences[[index]]$reverse_complement <- input[[paste0("reverse_", index)]]
+
+            # Log pour debug
+            cat("🔄 Checkbox reverse_", index, " changée à:", input[[paste0("reverse_", index)]], "\n")
+          }
+        }, ignoreInit = TRUE)
+      })
+    }
+  })
+
+  # Observer pour le bouton de rafraîchissement
+  observeEvent(input$refresh_files, {
+    cat("🔄 Début rafraîchissement\n")
+
+    tryCatch({
+      # Test de la fonction
+      gb_files <- get_available_gb_files()
+      cat("📁 Fichiers trouvés:", length(gb_files), "\n")
+
+      if (length(gb_files) > 0) {
+        cat("📄 Premiers fichiers:", paste(head(gb_files, 3), collapse = ", "), "\n")
+      }
+
+      # Test de l'update
+      updateSelectInput(session, "carte_xdna", choices = gb_files)
+      cat("✅ Update terminé\n")
+
+      showNotification(paste("✅ Trouvé", length(gb_files), "fichier(s)"),
+                       type = "message", duration = 3)
+
+    }, error = function(e) {
+      cat("❌ ERREUR:", e$message, "\n")
+      showNotification(paste("❌ Erreur:", e$message), type = "error", duration = 5)
+    })
   })
 
   # ==============================================================================
@@ -977,55 +1214,102 @@ server_clonage <- function(input, output, session) {
   })
 
   seqs <- eventReactive(input$align_btn, {
-    selected_files <- get_all_selected_files()
+    # Utiliser l'ordre personnalisé si appliqué, sinon l'ordre normal
+    if (reorder_data$custom_order_applied && length(reorder_data$sequences) > 0) {
 
-    if (length(selected_files) == 0) {
-      showNotification("⚠️ Aucun fichier sélectionné pour l'alignement", type = "warning", duration = 3)
-      return(NULL)
-    }
+      cat("🔄 Utilisation de l'ordre personnalisé\n")
 
-    # Organiser les fichiers par fragments
-    fragments_data <- list()
-    for (file_path in selected_files) {
-      fragment_type <- extract_fragment_type(file_path)
-      if (is.null(fragment_type)) {
-        fragment_type <- "unknown"
+      sequences <- list()
+      selected_files_reordered <- character()
+
+      for (i in seq_along(reorder_data$sequences)) {
+        seq_data <- reorder_data$sequences[[i]]
+
+        file_path <- seq_data$file_path
+
+        # Lire la séquence
+        lines <- readLines(file_path, warn = FALSE)
+        seq_raw <- paste(lines, collapse = "")
+        seq_clean <- clean_sequence(seq_raw)
+
+        # ✅ CORRECTION : Récupérer la valeur actuelle de la checkbox
+        current_reverse_value <- input[[paste0("reverse_", i)]]
+        if (is.null(current_reverse_value)) {
+          current_reverse_value <- seq_data$reverse_complement
+        }
+
+        # Appliquer le reverse complement si demandé
+        if (isTRUE(current_reverse_value)) {
+          seq_clean <- reverse_complement(seq_clean)
+          cat("↩️ Reverse complement appliqué à:", seq_data$file_name, "\n")
+        }
+
+        sequences[[length(sequences) + 1]] <- Biostrings::DNAString(seq_clean)
+        selected_files_reordered <- c(selected_files_reordered, file_path)
       }
 
-      fragments_data[[length(fragments_data) + 1]] <- list(
-        path = file_path,
-        type = fragment_type
-      )
-    }
+      # Stocker les informations pour utilisation ultérieure
+      attr(sequences, "reordered_files") <- selected_files_reordered
+      attr(sequences, "custom_order") <- TRUE
 
-    # Trier par type de fragment
-    fragments_data <- fragments_data[order(sapply(fragments_data, function(x) {
-      type_order <- c("5p", "int", "int1", "int2", "int3", "int4", "int5", "3p", "unknown")
-      match(x$type, type_order)
-    }))]
+      return(sequences)
 
-    # Charger les séquences
-    sequences <- list()
-    for (i in seq_along(fragments_data)) {
-      fragment <- fragments_data[[i]]
+    } else {
+      # ORDRE AUTOMATIQUE NORMAL - CORRECTION aussi ici
+      cat("🔄 Utilisation de l'ordre automatique\n")
 
-      # Lire la séquence
-      lines <- readLines(fragment$path, warn = FALSE)
-      seq_raw <- paste(lines, collapse = "")
-      seq_clean <- clean_sequence(seq_raw)
+      selected_files <- get_all_selected_files()
 
-      # Appliquer le reverse complément pour les fragments 3p
-      if (fragment$type == "3p") {
-        seq_clean <- reverse_complement(seq_clean)
+      if (length(selected_files) == 0) {
+        showNotification("⚠️ Aucun fichier sélectionné pour l'alignement", type = "warning", duration = 3)
+        return(NULL)
       }
 
-      sequences[[i]] <- Biostrings::DNAString(seq_clean)
+      # Organiser les fichiers par fragments
+      fragments_data <- list()
+      for (file_path in selected_files) {
+        fragment_type <- extract_fragment_type(file_path)
+        if (is.null(fragment_type)) {
+          fragment_type <- "unknown"
+        }
+
+        fragments_data[[length(fragments_data) + 1]] <- list(
+          path = file_path,
+          type = fragment_type
+        )
+      }
+
+      # Trier par type de fragment
+      fragments_data <- fragments_data[order(sapply(fragments_data, function(x) {
+        type_order <- c("5p", "int", "int1", "int2", "int3", "int4", "int5", "3p", "unknown")
+        match(x$type, type_order)
+      }))]
+
+      # Charger les séquences
+      sequences <- list()
+      for (i in seq_along(fragments_data)) {
+        fragment <- fragments_data[[i]]
+
+        # Lire la séquence
+        lines <- readLines(fragment$path, warn = FALSE)
+        seq_raw <- paste(lines, collapse = "")
+        seq_clean <- clean_sequence(seq_raw)
+
+        # ✅ CORRECTION : Appliquer RC seulement si pas d'ordre personnalisé
+        # En mode automatique, 3p en RC par défaut (comme avant)
+        if (fragment$type == "3p") {
+          seq_clean <- reverse_complement(seq_clean)
+          cat("↩️ 3p automatiquement en reverse complement:", basename(fragment$path), "\n")
+        }
+
+        sequences[[i]] <- Biostrings::DNAString(seq_clean)
+      }
+
+      # Stocker les informations de fragments pour utilisation ultérieure
+      attr(sequences, "fragments_info") <- fragments_data
+
+      return(sequences)
     }
-
-    # Stocker les informations de fragments pour utilisation ultérieure
-    attr(sequences, "fragments_info") <- fragments_data
-
-    return(sequences)
   })
 
 
@@ -1129,13 +1413,21 @@ server_clonage <- function(input, output, session) {
         features_lines = data_xdna$features,
         restriction_sites_list = restriction_sites(),
         alignments_info = alignments_info,
-        selected_files = get_all_selected_files()
+        selected_files = if (reorder_data$custom_order_applied && !is.null(attr(seqs(), "reordered_files"))) {
+          attr(seqs(), "reordered_files")  # Utiliser l'ordre personnalisé
+        } else {
+          get_all_selected_files()  # Utiliser l'ordre automatique
+        }
       )
 
       # Génération de la légende des couleurs
       legend_content <- generate_color_legend(data_xdna$features, restriction_sites())
 
-      selected_files_paths <- get_all_selected_files()
+      selected_files_paths <- if (reorder_data$custom_order_applied && !is.null(attr(seqs(), "reordered_files"))) {
+        attr(seqs(), "reordered_files")  # Utiliser l'ordre personnalisé
+      } else {
+        get_all_selected_files()  # Utiliser l'ordre automatique
+      }
       total_seqs <- length(seqs())
 
       # ======================================================================
@@ -1158,9 +1450,9 @@ server_clonage <- function(input, output, session) {
           pattern = seqs()[[i]],
           subject = data_xdna$seq,
           type = "local",
-          substitutionMatrix = nucleotideSubstitutionMatrix(match = 2, mismatch = -1),
-          gapOpening = -5,
-          gapExtension = -1
+          substitutionMatrix = nucleotideSubstitutionMatrix(match = 5, mismatch = -4),
+          gapOpening = -10,
+          gapExtension = -0.5
         )
 
         # Extraction des informations d'alignement local
@@ -1177,9 +1469,9 @@ server_clonage <- function(input, output, session) {
           pattern = seqs()[[i]],
           subject = data_xdna$seq,
           type = "global",
-          substitutionMatrix = nucleotideSubstitutionMatrix(match = 2, mismatch = -1),
-          gapOpening = -3,
-          gapExtension = -1
+          substitutionMatrix = nucleotideSubstitutionMatrix(match = +5, mismatch = -4),
+          gapOpening = -10,
+          gapExtension = -0.5
         )
 
         pat_aligned_global <- as.character(pattern(aln_global))

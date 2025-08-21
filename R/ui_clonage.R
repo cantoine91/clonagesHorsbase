@@ -387,6 +387,35 @@ ui_clonage <- navbarPage(
                        style = "margin-top: 10px; padding: 8px; background: #e8f4f8; border-radius: 4px; font-family: monospace; font-size: 12px;",
                        textOutput("selection_summary_text")
                    )
+                 ),
+                 conditionalPanel(
+                   condition = "output.seq_files_found",
+
+                   wellPanel(
+                     style = "background: #fff3cd; border: 1px solid #ffeaa7;",
+
+                     h5("🔄 Réorganisation des séquences", style = "color: #856404; margin-top: 0;"),
+
+                     p(style = "font-size: 12px; color: #856404; margin-bottom: 15px;",
+                       "Modifiez l'ordre ou l'orientation si les noms automatiques sont incorrects."),
+
+                     # Boutons d'action (SANS le bouton inverse)
+                     fluidRow(
+                       column(6,
+                              actionButton("reset_order_btn", "🔄 Remettre ordre automatique",
+                                           style = "background-color: #6c757d; color: white; border: none; font-size: 12px; width: 100%;")
+                       ),
+                       column(6,
+                              actionButton("apply_changes_btn", "✅ Appliquer modifications",
+                                           style = "background-color: #28a745; color: white; border: none; font-size: 12px; width: 100%;")
+                       )
+                     ),
+
+                     br(),
+
+                     # Interface de réorganisation
+                     uiOutput("sequence_reorder_ui")
+                   )
                  )
                ),
 
