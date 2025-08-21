@@ -641,16 +641,10 @@ server_clonage <- function(input, output, session) {
       }
 
       reorder_data$sequences <- sequences_list
-      reorder_data$custom_order_applied <- FALSE
+      reorder_data$custom_order_applied <- FALSE  # ✅ Remettre à FALSE
 
       showNotification("🔄 Ordre automatique restauré", type = "message", duration = 2)
     }
-  })
-
-  observeEvent(input$apply_changes_btn, {
-    # Marquer comme ordre personnalisé appliqué
-    reorder_data$custom_order_applied <- TRUE
-    showNotification("✅ Modifications appliquées pour l'alignement", type = "message", duration = 3)
   })
 
   # Observeurs pour les boutons de déplacement (à générer dynamiquement)
@@ -672,6 +666,9 @@ server_clonage <- function(input, output, session) {
             # Mettre à jour les index
             reorder_data$sequences[[index]]$index <- index
             reorder_data$sequences[[index - 1]]$index <- index - 1
+
+            # ✅ AUTOMATIQUE : Marquer comme ordre personnalisé
+            reorder_data$custom_order_applied <- TRUE
           }
         }, ignoreInit = TRUE)
 
@@ -686,6 +683,9 @@ server_clonage <- function(input, output, session) {
             # Mettre à jour les index
             reorder_data$sequences[[index]]$index <- index
             reorder_data$sequences[[index + 1]]$index <- index + 1
+
+            # ✅ AUTOMATIQUE : Marquer comme ordre personnalisé
+            reorder_data$custom_order_applied <- TRUE
           }
         }, ignoreInit = TRUE)
       })
@@ -816,8 +816,11 @@ server_clonage <- function(input, output, session) {
             # Mettre à jour la valeur dans reorder_data
             reorder_data$sequences[[index]]$reverse_complement <- input[[paste0("reverse_", index)]]
 
+            # ✅ AUTOMATIQUE : Marquer comme ordre personnalisé dès qu'on change un RC
+            reorder_data$custom_order_applied <- TRUE
+
             # Log pour debug
-            cat("🔄 Checkbox reverse_", index, " changée à:", input[[paste0("reverse_", index)]], "\n")
+            cat("🔄 Checkbox reverse_", index, " changée à :", input[[paste0("reverse_", index)]], "\n")
           }
         }, ignoreInit = TRUE)
       })
@@ -1848,7 +1851,8 @@ server_clonage <- function(input, output, session) {
       writeLines(fasta_content, file)
     }
   )
-
 }
+
+
 
 

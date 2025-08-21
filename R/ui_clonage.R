@@ -404,10 +404,6 @@ ui_clonage <- navbarPage(
                        column(6,
                               actionButton("reset_order_btn", "🔄 Remettre ordre automatique",
                                            style = "background-color: #6c757d; color: white; border: none; font-size: 12px; width: 100%;")
-                       ),
-                       column(6,
-                              actionButton("apply_changes_btn", "✅ Appliquer modifications",
-                                           style = "background-color: #28a745; color: white; border: none; font-size: 12px; width: 100%;")
                        )
                      ),
 
