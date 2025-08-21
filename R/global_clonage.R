@@ -163,13 +163,16 @@ find_restriction_sites <- function(sequence, enzyme_sequence) {
 
   # Gestion spéciale pour SfiI
   if (enzyme_sequence == "GGCC.....GGCC") {
-    # Pattern regex pour SfiI : GGCC suivi de 5 n'importe quels nucléotides puis GGCC
     pattern <- "GGCC[ATCG]{5}GGCC"
     matches <- gregexpr(pattern, sequence, perl = TRUE)[[1]]
 
     if (matches[1] == -1) {
       return(integer(0))
     }
+
+    # ✅ IMPORTANT : gregexpr retourne des positions 1-indexées (correct)
+    # Donc position 1361 dans la séquence = position 1361 rapportée
+    cat("🔍 SfiI sites trouvés aux positions:", matches, "\n")
     return(as.integer(matches))
   }
 
@@ -178,6 +181,15 @@ find_restriction_sites <- function(sequence, enzyme_sequence) {
 
   if (matches[1] == -1) {
     return(integer(0))
+  }
+
+  # ✅ DEBUG : Vérifier les positions trouvées
+  cat("🔍 Enzyme", enzyme_sequence, "trouvé aux positions:", matches, "\n")
+
+  # ✅ VÉRIFICATION : Les positions de gregexpr sont-elles correctes ?
+  for (pos in matches[1:min(3, length(matches))]) {
+    found_seq <- substr(sequence, pos, pos + nchar(enzyme_sequence) - 1)
+    cat("   Position", pos, "→ séquence trouvée:", found_seq, "\n")
   }
 
   return(as.integer(matches))
@@ -197,37 +209,54 @@ build_restriction_position_map <- function(sequence_length, restriction_sites, a
       sites <- restriction_sites[[enzyme_name]]
       if (length(sites) > 0) {
 
-        # Récupérer la séquence de l'enzyme depuis les attributs stockés
+        # Récupérer la séquence de l'enzyme
         enzyme_sequence <- attr(sites, "enzyme_sequence")
 
         if (!is.null(enzyme_sequence)) {
-          # Utiliser la séquence stockée
           if (enzyme_sequence == "GGCC.....GGCC") {
-            site_length <- 13  # Cas spécial SfiI
+            site_length <- 13
           } else {
             site_length <- nchar(enzyme_sequence)
           }
         } else {
-          # Fallback : essayer de deviner ou utiliser une valeur par défaut
           enzymes <- get_restriction_enzymes()
           if (enzyme_name %in% names(enzymes)) {
             site_length <- nchar(enzymes[[enzyme_name]])
           } else {
-            site_length <- 6  # Valeur par défaut raisonnable
+            site_length <- 6
           }
         }
 
         for (site_pos in sites) {
-          # Calcul des positions relatives à la fenêtre d'affichage
-          for (i in 0:(site_length - 1)) {
-            global_pos <- site_pos + i
-            # Position relative dans la fenêtre d'affichage
-            relative_pos <- global_pos - alignment_start + 1
+          # ✅ CORRECTION : Pas de décalage supplémentaire
+          # Si site_pos = 1361 et alignment_start = 1329
+          # Alors relative_start = 1361 - 1329 + 1 = 33
 
-            # Vérifier que la position est dans la fenêtre
-            if (relative_pos > 0 && relative_pos <= sequence_length) {
-              is_restriction[relative_pos] <- TRUE
+          site_end <- site_pos + site_length - 1
+
+          # Calculer les positions relatives dans la fenêtre d'affichage
+          relative_start <- site_pos - alignment_start + 1
+          relative_end <- site_end - alignment_start + 1
+
+          # ✅ DEBUG détaillé
+          cat("🔍 GRISEMENT", enzyme_name, ":\n")
+          cat("   Site global:", site_pos, "-", site_end, "\n")
+          cat("   Alignment start:", alignment_start, "\n")
+          cat("   Positions relatives:", relative_start, "-", relative_end, "\n")
+          cat("   Sequence length:", sequence_length, "\n")
+
+          # Appliquer le grisement si dans les bornes
+          if (relative_start <= sequence_length && relative_end >= 1) {
+            start_pos <- max(1, relative_start)
+            end_pos <- min(sequence_length, relative_end)
+
+            for (pos in start_pos:end_pos) {
+              is_restriction[pos] <- TRUE
             }
+
+            cat("   → Grisement appliqué de", start_pos, "à", end_pos, "\n")
+          } else {
+            cat("   → Pas de grisement (hors bornes)\n")
           }
         }
       }
@@ -261,40 +290,38 @@ generate_restriction_legend_formatted <- function(restriction_sites_list) {
         enzyme_seq <- enzymes[[enzyme_name]]
       }
 
-      # ✅ CORRECTION : Pour les séquences personnalisées, utiliser le nom au lieu de la séquence
+      # Déterminer la longueur et l'affichage
       if (grepl("Custom[12]_", enzyme_name)) {
-        # C'est une séquence personnalisée sans nom custom
         enzyme_display <- enzyme_seq
         site_length <- nchar(enzyme_seq)
       } else if (enzyme_name == "SfiI" || (!is.null(enzyme_seq) && enzyme_seq == "GGCC.....GGCC")) {
-        # Cas spécial SfiI
         enzyme_display <- "GGCCNNNNNGGCC"
         site_length <- 13
       } else if (!is.null(enzyme_seq) && enzyme_name %in% names(enzymes)) {
-        # Enzyme classique
         enzyme_display <- enzyme_seq
         site_length <- nchar(enzyme_seq)
       } else {
-        # ✅ Séquence personnalisée avec nom custom - afficher seulement le nom
-        enzyme_display <- ""  # Pas de séquence entre parenthèses
+        enzyme_display <- ""
         site_length <- if (!is.null(enzyme_seq)) nchar(enzyme_seq) else 6
       }
 
-      # Calculer début-fin pour chaque site
+      # ✅ CORRECTION : Calculer début-fin SANS décalage supplémentaire
       sites_ranges <- character()
       for (site_pos in sites) {
+        # ✅ Si gregexpr retourne 1361, alors site_end = 1361 + 6 - 1 = 1366
         site_end <- site_pos + site_length - 1
         sites_ranges <- c(sites_ranges, paste0(site_pos, "-", site_end))
+
+        # ✅ DEBUG : Vérifier le calcul
+        cat("🔍 Site", enzyme_name, ":", site_pos, "→", site_end, "(longueur:", site_length, ")\n")
       }
 
       sites_text <- paste(sites_ranges, collapse = ", ")
 
-      # ✅ Affichage selon le type
+      # Affichage selon le type
       if (enzyme_display == "") {
-        # Nom personnalisé sans parenthèses
         display_text <- paste0(enzyme_name, " - Sites: ", sites_text)
       } else {
-        # Enzyme classique ou séquence avec parenthèses
         display_text <- paste0(enzyme_name, " (", enzyme_display, ") - Sites: ", sites_text)
       }
 
@@ -313,7 +340,6 @@ generate_restriction_legend_formatted <- function(restriction_sites_list) {
 
   return("")
 }
-
 # ==============================================================================
 # FONCTIONS D'ALIGNEMENT
 # ==============================================================================
@@ -729,11 +755,16 @@ find_corresponding_ab1_files <- function(seq_files_paths) {
   ab1_info <- list()
 
   for (seq_file in seq_files_paths) {
+    # ✅ NOUVEAU : Vérifier que le fichier .seq ne commence pas par ~
+    if (grepl("^~", basename(seq_file))) {
+      next  # Ignorer les fichiers temporaires
+    }
+
     # Convertir .seq en .ab1
     ab1_file <- gsub("\\.seq$", ".ab1", seq_file, ignore.case = TRUE)
 
-    # Vérifier si le fichier AB1 existe
-    if (file.exists(ab1_file)) {
+    # Vérifier si le fichier AB1 existe ET ne commence pas par ~
+    if (file.exists(ab1_file) && !grepl("^~", basename(ab1_file))) {
       ab1_info[[length(ab1_info) + 1]] <- list(
         seq_file = seq_file,
         ab1_file = ab1_file,
@@ -743,7 +774,7 @@ find_corresponding_ab1_files <- function(seq_files_paths) {
     } else {
       # Essayer avec une casse différente
       ab1_file_upper <- gsub("\\.seq$", ".AB1", seq_file, ignore.case = TRUE)
-      if (file.exists(ab1_file_upper)) {
+      if (file.exists(ab1_file_upper) && !grepl("^~", basename(ab1_file_upper))) {
         ab1_info[[length(ab1_info) + 1]] <- list(
           seq_file = seq_file,
           ab1_file = ab1_file_upper,
@@ -1745,3 +1776,4 @@ debug_paths <- function() {
 
   cat("══════════════════════════════════════════\n")
 }
+

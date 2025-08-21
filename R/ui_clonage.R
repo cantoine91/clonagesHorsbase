@@ -326,7 +326,7 @@ ui_clonage <- navbarPage(
                                        style = "float: right; margin-bottom: 5px; background: transparent; border: 1px solid #ccc;",
                                        title = "Rafraîchir la liste des fichiers GenBank"),
                           selectInput("carte_xdna",
-                                      "Carte de référence (.gb):",
+                                      "Carte de référence (.gb/.txt):",
                                       choices = NULL,
                                       width = "100%")
                    )
