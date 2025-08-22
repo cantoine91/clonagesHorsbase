@@ -1698,8 +1698,7 @@ server_clonage <- function(input, output, session) {
         if (length(features_for_sorting) > 0) {
           features_for_sorting <- features_for_sorting[order(sapply(features_for_sorting, function(x) x$start_pos))]
 
-          html_content <- paste0(html_content, "<h2>🎨 Légende des couleurs</h2>\n")
-          html_content <- paste0(html_content, "<p style='font-size: 12px; color: #6c757d; font-style: italic;'>Features triées par position croissante</p>\n")
+          html_content <- paste0(html_content, "<h2>🎨 Légende</h2>\n")
 
           for (feat_data in features_for_sorting) {
             html_content <- paste0(html_content,

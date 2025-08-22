@@ -399,7 +399,6 @@ ui_clonage <- navbarPage(
                      p(style = "font-size: 12px; color: #856404; margin-bottom: 15px;",
                        "Modifiez l'ordre ou l'orientation si les noms automatiques sont incorrects."),
 
-                     # Boutons d'action (SANS le bouton inverse)
                      fluidRow(
                        column(6,
                               actionButton("reset_order_btn", "🔄 Remettre ordre automatique",

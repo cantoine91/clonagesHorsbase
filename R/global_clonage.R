@@ -340,8 +340,6 @@ generate_restriction_legend_formatted <- function(restriction_sites_list) {
     }
 
     return(paste0("<h4 style='margin-top: 15px; color: #b22222;'>Sites de restriction</h4>",
-                  "<div style='font-size: 11px; color: #6c757d; margin-bottom: 10px; font-style: italic;'>",
-                  "(Enzymes triées par position du premier site)</div>",
                   paste(legend_items, collapse = "")))
   }
 
@@ -750,9 +748,7 @@ generate_color_legend <- function(features_lines, restriction_sites_list = NULL)
 
   # Construction de la légende des features
   legend_content <- if (length(legend_items) > 0) {
-    paste0("<h4 style='margin-top: 0; color: #b22222;'>Légende des couleurs</h4>",
-           "<div style='font-size: 11px; color: #6c757d; margin-bottom: 10px; font-style: italic;'>",
-           "(Features triées par position croissante)</div>",
+    paste0("<h4 style='margin-top: 0; color: #b22222;'>Légende </h4>",
            paste(legend_items, collapse = ""))
   } else {
     "<h4 style='margin-top: 0; color: #b22222;'>Aucune annotation trouvée</h4>"
