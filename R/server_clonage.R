@@ -144,7 +144,7 @@ server_clonage <- function(input, output, session) {
       return(character())
     }
 
-    withProgress(message = 'Recherche ultra-rapide...', value = 0, {
+    withProgress(message = 'Recherche ...', value = 0, {
       tryCatch({
         plate_keyword <- trimws(plate_keyword)
         incProgress(0.3, detail = paste("Recherche directe de '*", plate_keyword, "*'...", sep=""))
