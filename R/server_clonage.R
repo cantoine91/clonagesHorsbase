@@ -577,6 +577,11 @@ server_clonage <- function(input, output, session) {
 
   #' Fonction pour récupérer tous les fichiers sélectionnés
   get_all_selected_files <- reactive({
+    # Vérification de sécurité - AJOUTEZ CETTE LIGNE
+    if (is.null(search_data$file_groups)) {
+      return(character())
+    }
+
     req(search_data$file_groups)
 
     all_selected <- character()
@@ -605,6 +610,11 @@ server_clonage <- function(input, output, session) {
   observeEvent(get_all_selected_files(), {
     selected_files <- get_all_selected_files()
 
+    # Vérification de sécurité - AJOUTEZ CES 3 LIGNES
+    if (is.null(selected_files)) {
+      return()
+    }
+
     if (length(selected_files) > 0) {
       sequences_list <- list()
 
@@ -620,7 +630,7 @@ server_clonage <- function(input, output, session) {
           file_name = file_name,
           display_name = file_name,
           fragment_type = if(is.null(fragment_type)) "unknown" else fragment_type,
-          reverse_complement = if(fragment_type == "3p") TRUE else FALSE,  # 3p en RC par défaut
+          reverse_complement = if(!is.null(fragment_type) && fragment_type == "3p") TRUE else FALSE,
           enabled = TRUE
         )
       }
@@ -714,6 +724,11 @@ server_clonage <- function(input, output, session) {
 
   #' Observeurs pour les checkboxes de sélection globale des clones
   observe({
+    # Vérifications de sécurité
+    if (is.null(search_data$file_groups)) {
+      return()
+    }
+
     req(search_data$file_groups)
 
     clones <- search_data$file_groups
@@ -736,16 +751,32 @@ server_clonage <- function(input, output, session) {
         counter <- global_counter
         paths <- clone_data$paths
 
-        observeEvent(input[[paste0("select_clone_", counter)]], {
-          checkbox_value <- input[[paste0("select_clone_", counter)]]
-          clone_select_id <- paste0("seq_files_clone_", counter)
+        # Attendre que l'input existe avant de créer l'observeur
+        observe({
+          checkbox_input_id <- paste0("select_clone_", counter)
 
-          if (isTRUE(checkbox_value)) {
-            updateSelectInput(session, clone_select_id, selected = paths)
-          } else {
-            updateSelectInput(session, clone_select_id, selected = character())
+          # Vérifier que l'input existe
+          if (is.null(input[[checkbox_input_id]])) {
+            return()
           }
-        }, ignoreInit = TRUE, ignoreNULL = TRUE)
+
+          observeEvent(input[[checkbox_input_id]], {
+            checkbox_value <- input[[checkbox_input_id]]
+
+            # Triple vérification de sécurité
+            if (is.null(checkbox_value)) return()
+            if (!is.logical(checkbox_value)) return()
+            if (length(checkbox_value) == 0) return()
+
+            clone_select_id <- paste0("seq_files_clone_", counter)
+
+            if (isTRUE(checkbox_value)) {
+              updateSelectInput(session, clone_select_id, selected = paths)
+            } else {
+              updateSelectInput(session, clone_select_id, selected = character())
+            }
+          }, ignoreInit = TRUE, ignoreNULL = TRUE, once = FALSE)
+        })
       })
     }
   })
